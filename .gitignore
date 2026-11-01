@@ -1,0 +1,4 @@
+node_modules/
+scratch/
+dist/play.html
+.DS_Store

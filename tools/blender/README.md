@@ -32,7 +32,7 @@ Loader and exporter: `src/characters/bodyAsset.js`.
 ## Rules for a body GLB
 
 1. **Scale and axes.** 1 Blender unit = 1 m = 1 game world unit = 100 model units.
-   Lyra stands on the origin, about 1.0 m tall (about 1.3 m to the ear tips), facing
+   Lyra stands on the origin, about 1.0 m tall (about 1.2 m to the ear tips), facing
    **-Y** in Blender (front view looks at her face). Her left side (`armL`, `earL`) is
    **+X**. Export with the glTF default **+Y Up**; that maps -Y to the game's +Z front.
 2. **Rest pose.** Keep the blockout's bone empties exactly as imported: do not move,

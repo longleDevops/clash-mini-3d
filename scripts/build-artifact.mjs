@@ -25,7 +25,7 @@ const result = await build({
   logLevel: 'warning',
 });
 let js = result.outputFiles[0].text.replace(/<\/script/gi, '<\\/script');
-const css = fs.readFileSync(path.join(root, 'src/ui/styles.css'), 'utf8');
+const css = ['styles.css', 'scenes.css'].map((f) => fs.readFileSync(path.join(root, 'src/ui', f), 'utf8')).join('\n');
 let page = fs.readFileSync(path.join(root, 'src/app.html'), 'utf8').replace('/*__CSS__*/', () => css).replace('/*__JS__*/', () => js);
 if (local) page = page.replace(/https:\/\/cdn\.jsdelivr\.net\/npm\/three@[\d.]+\//g, '/node_modules/three/');
 

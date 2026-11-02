@@ -5,6 +5,7 @@ import { getMap } from '../maps/registry.js';
 import { BoardView } from '../battle/BoardView.js';
 import { BattleController } from '../battle/BattleController.js';
 import { stageInfo } from '../battle/stages.js';
+import { stageRef } from '../maps/chapters.js';
 import { FxSystem } from '../fx/FxSystem.js';
 import { WorldOverlay } from '../ui/WorldOverlay.js';
 import { h, icon, fmt } from '../ui/dom.js';
@@ -20,12 +21,15 @@ export class BattleScreen {
     this.camera = new THREE.PerspectiveCamera(38, 16 / 9, 0.1, 200);
   }
 
-  async enter({ stage } = {}) {
+  async enter({ stage, mapId } = {}) {
     const g = this.game;
     this.stage = stageInfo(stage || g.save.data.stage);
+    // chapter -> arena (see maps/chapters.js); mapId overrides for previews
+    this.ref = stageRef(this.stage.number);
+    this.stage.name = `Stage ${this.ref.label}`;
     this.scene = g.newScene();
     this.clock = new Clock();
-    this.map = getMap().create({ renderer: g.renderer, scene: this.scene });
+    this.map = getMap(mapId || this.ref.chapter.mapId).create({ renderer: g.renderer, scene: this.scene });
     this.camCfg = this.map.cameras.battle;
     frameCamera(this.camera, this.camCfg);
     this.boardView = new BoardView(this.map.board);
@@ -71,7 +75,7 @@ export class BattleScreen {
       player: h('i', { class: 'fill' }),
       enemy: h('i', { class: 'fill' }),
     };
-    this.roundEl = h('div', { class: 'round' }, `Stage ${this.stage.number}`);
+    this.roundEl = h('div', { class: 'round' }, this.stage.name);
     this.speedBtn = h('button', { class: 'btn-round small', onclick: () => this.toggleSpeed(), 'aria-label': 'Battle speed' }, h('b', {}, 'x1'));
     this.autoBtn = h('button', { class: 'btn-round small auto', onclick: () => this.toggleAuto(), 'aria-label': 'Auto skills' }, h('b', {}, 'Auto'));
     this.pauseBtn = h('button', { class: 'btn-round small', onclick: () => this.togglePause(), 'aria-label': 'Pause' }, icon(ICONS.pause));
@@ -104,7 +108,7 @@ export class BattleScreen {
         h('div', { class: 'vs' }, h('span', { class: 'vs-word' }, 'VS'), this.roundEl),
         h('div', { class: 'team foe' }, h('div', { class: 'tb' }, h('span', {}, 'Shade Legion'), h('div', { class: 'bar' }, this.teamBars.enemy)), h('img', { src: impFace, alt: '' }))
       ),
-      h('button', { class: 'btn-round back', onclick: () => g.go('home'), 'aria-label': 'Leave battle' }, icon(ICONS.back)),
+      h('button', { class: 'btn-round back', onclick: () => g.go('chapter', { chapter: this.ref.chapter.id }), 'aria-label': 'Leave battle' }, icon(ICONS.back)),
       h('div', { class: 'speed-ctrls' }, this.pauseBtn, this.speedBtn, this.autoBtn),
       this.deployBar,
       this.heroCard,
@@ -242,14 +246,14 @@ export class BattleScreen {
         { class: `result ${res.victory ? 'win' : 'lose'}` },
         h('div', { class: 'ribbon' }, res.victory ? 'Victory' : 'Defeat'),
         h('div', { class: 'stars' }, [0, 1, 2].map((i) => h('span', { class: 'st', style: { animationDelay: `${0.25 + i * 0.18}s` } }, icon(i < res.stars ? ICONS.star : ICONS.starEmpty)))),
-        h('div', { class: 'sub' }, res.victory ? `Stage ${this.stage.number} cleared in ${res.rounds} rounds` : res.rounds >= this.stage.maxRounds ? 'Out of rounds. Fire skills sooner to end it faster.' : 'Lyra was knocked out. Try a back-row tile.'),
+        h('div', { class: 'sub' }, res.victory ? `${this.stage.name} cleared in ${res.rounds} rounds` : res.rounds >= this.stage.maxRounds ? 'Out of rounds. Fire skills sooner to end it faster.' : 'Lyra was knocked out. Try a back-row tile.'),
         h('div', { class: 'rewards panel' }, h('div', { class: 'eyebrow' }, 'Rewards'), h('div', { class: 'row' }, gems ? reward(ICONS.gem, gems) : null, reward(ICONS.coin, gold), reward(ICONS.exp, exp))),
         h(
           'div',
           { class: 'actions' },
           h('button', { class: 'btn btn-purple', onclick: () => this.game.go('battle', { stage: this.stage.number }) }, 'Retry'),
           res.victory ? h('button', { class: 'btn btn-gold', onclick: () => this.game.go('battle', { stage: this.stage.number + 1 }) }, 'Next Stage') : null,
-          h('button', { class: 'btn btn-plain', onclick: () => this.game.go('home') }, 'Home')
+          h('button', { class: 'btn btn-plain', onclick: () => this.game.go('chapter', { chapter: this.ref.chapter.id }) }, 'Map')
         )
       );
       this.ui.append(panel);

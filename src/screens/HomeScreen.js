@@ -4,27 +4,36 @@ import { getMap } from '../maps/registry.js';
 import { Character } from '../characters/Character.js';
 import { getUnit } from '../characters/registry.js';
 import { FxSystem } from '../fx/FxSystem.js';
+import { Hotspots } from '../ui/Hotspots.js';
 import { h, icon, fmt, toast } from '../ui/dom.js';
 import { ICONS } from '../ui/icons.js';
+import { SCENE_ICONS } from '../ui/sceneIcons.js';
 import { pick } from '../core/math.js';
+import { chapterForStage, stageRef } from '../maps/chapters.js';
 
-/** Main hub: the hero on the arena dais, resources, and the Battle button. */
+const SPOT_ICONS = { campaign: ICONS.swords, heroes: ICONS.heroes, summon: SCENE_ICONS.summon, guild: ICONS.guild, shop: ICONS.shop, arena: SCENE_ICONS.arena };
+
+/**
+ * Main hub (Skyward Haven): Lyra on her dais in front of the floating sanctum,
+ * tappable landmark labels, resources, and the Battle button.
+ */
 export class HomeScreen {
   constructor(game) {
     this.game = game;
-    this.camera = new THREE.PerspectiveCamera(32, 16 / 9, 0.1, 200);
+    this.camera = new THREE.PerspectiveCamera(38, 16 / 9, 0.1, 200);
   }
 
   async enter() {
     const g = this.game;
     this.scene = g.newScene();
-    this.map = getMap().create({ renderer: g.renderer, scene: this.scene });
+    this.map = getMap('skyward-haven').create({ renderer: g.renderer, scene: this.scene });
     this.fx = new FxSystem(this.scene);
     this.hero = new Character(getUnit('lyra'));
     this.hero.root.position.copy(this.map.spots.home);
-    this.hero.faceTowards(0.25, { instant: true });
-    this.scene.add(this.hero.root);
     this.cam = this.map.cameras.home;
+    // turn to face the camera
+    this.hero.faceTowards(Math.atan2(this.cam.pos[0] - this.map.spots.home.x, this.cam.pos[2] - this.map.spots.home.z) + 0.1, { instant: true });
+    this.scene.add(this.hero.root);
     frameCamera(this.camera, this.cam);
     this.t = 0;
     this.buildUI();
@@ -33,13 +42,16 @@ export class HomeScreen {
   buildUI() {
     const g = this.game, save = g.save.data, lyra = getUnit('lyra');
     const avatar = g.portraits.get('lyra', { expression: 'happy' });
+    const next = stageRef(save.stage);
+    const goCampaign = () => g.go('chapter', { chapter: chapterForStage(save.stage).id });
     this.ui = h(
       'div',
       { class: 'screen home' },
+      (this.spotHost = h('div', { class: 'world-host' })),
       h(
         'div',
         { class: 'topbar' },
-        h('div', { class: 'player-card panel' }, h('img', { class: 'avatar', src: avatar, alt: '' }), h('div', {}, h('div', { class: 'pname' }, 'Summoner'), h('div', { class: 'plevel' }, `Stage ${save.stage}`))),
+        h('div', { class: 'player-card panel' }, h('img', { class: 'avatar', src: avatar, alt: '' }), h('div', {}, h('div', { class: 'pname' }, 'Summoner'), h('div', { class: 'plevel' }, `Stage ${next.label}`))),
         h(
           'div',
           { class: 'resources' },
@@ -50,12 +62,11 @@ export class HomeScreen {
       ),
       h(
         'div',
-        { class: 'hero-plate' },
+        { class: 'hero-plate compact' },
         h('div', { class: 'eyebrow' }, 'Featured hero'),
         h('div', { class: 'hero-name' }, lyra.name),
         h('div', { class: 'hero-title' }, lyra.title),
         h('div', { class: 'chips' }, h('span', { class: 'chip' }, icon(ICONS.mage), lyra.role), h('span', { class: 'chip' }, icon(ICONS.arcane), lyra.element)),
-        h('p', { class: 'blurb' }, lyra.blurb),
         h('div', { class: 'tap-hint' }, 'Tap Lyra to say hi')
       ),
       h(
@@ -63,12 +74,31 @@ export class HomeScreen {
         { class: 'bottom-nav' },
         navBtn(ICONS.home, 'Home', true),
         navBtn(ICONS.heroes, 'Heroes', false, () => g.go('studio')),
-        h('button', { class: 'btn btn-gold battle-btn', onclick: () => g.go('battle') }, icon(ICONS.swords), h('span', {}, 'Battle'), h('small', {}, `Stage ${save.stage}`)),
-        navBtn(ICONS.guild, 'Guild', false, () => toast(this.ui, 'Guild opens in a later update'), true),
+        h('button', { class: 'btn btn-gold battle-btn', onclick: goCampaign }, icon(ICONS.swords), h('span', {}, 'Battle'), h('small', {}, next.bonus ? next.label : `Stage ${next.label}`)),
+        navBtn(SCENE_ICONS.map, 'World', false, () => g.go('world')),
         navBtn(ICONS.shop, 'Shop', false, () => toast(this.ui, 'Shop opens in a later update'), true)
       )
     );
     g.ui.append(this.ui);
+
+    // landmark labels pinned to the hub's islands
+    this.spots = new Hotspots(this.spotHost);
+    for (const s of this.map.hotspots || []) {
+      const act = () => {
+        if (s.target === 'world') g.go('world');
+        else if (s.target === 'studio') g.go('studio');
+        else toast(this.ui, `${s.label} opens in a later update`);
+      };
+      const el = h(
+        'button',
+        { class: `spot-label${s.primary ? ' primary' : ''}${s.locked ? ' locked' : ''}`, onclick: act, 'aria-label': s.label },
+        icon(SPOT_ICONS[s.id] || ICONS.star),
+        h('span', {}, s.label),
+        s.primary ? h('small', {}, next.label) : null,
+        s.locked ? h('i', { class: 'lock', html: ICONS.lock }) : null
+      );
+      this.spots.add(s.anchor, el);
+    }
   }
 
   onPointerDown(ndc) {
@@ -94,8 +124,13 @@ export class HomeScreen {
     this.camera.lookAt(...c.look);
   }
 
+  afterRender() {
+    this.spots?.update(this.camera);
+  }
+
   async exit() {
     clearTimeout(this._react);
+    this.spots?.dispose();
     this.ui.remove();
     this.fx.clear();
     this.hero.dispose();

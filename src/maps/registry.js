@@ -1,10 +1,13 @@
 /**
  * Map registry — the plug-in point for the maps & scenes work.
  *
+ * kind: 'arena' (battle maps, one per chapter: see ./chapters.js),
+ *       'hub' (home screen scene, adds `hotspots`), 'scene' (world / chapter map).
+ *
  * A map definition:
  * {
- *   id, name, placeholder?: boolean,
- *   create({ renderer, scene }) -> {
+ *   id, name, kind, theme?: { accent, sky, emblem },
+ *   create({ renderer, scene, ...options }) -> {
  *     root,                         // Object3D (already added to scene by the map)
  *     board: { center: Vector3, tile, cols: 8, rows: 4 },   // where the battle grid sits
  *     spots: { home: Vector3 },     // where the hero stands on the home screen
@@ -15,8 +18,9 @@
  *     update?(dt, t), dispose?()
  *   }
  * }
+ * Arenas fill board + cameras.battle; scenes fill their own cameras (home / view).
  * The map owns sky, fog, lights and set dressing. Characters, grid tiles,
- * VFX and UI are added by the game on top.
+ * VFX and UI are added by the game on top. Shared builders live in ./kit/.
  */
 const maps = new Map();
 let defaultId = null;
@@ -31,6 +35,6 @@ export function getMap(id) {
   return maps.get(id) || maps.get(defaultId);
 }
 
-export function listMaps() {
-  return [...maps.values()];
+export function listMaps(kind) {
+  return [...maps.values()].filter((m) => !kind || m.kind === kind);
 }

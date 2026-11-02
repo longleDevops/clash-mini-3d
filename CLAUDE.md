@@ -10,9 +10,16 @@ URL (pass it as `url` from a new conversation). Never create a second game artif
 
 ## Workstreams (keep them separate)
 - Characters + skills: `src/characters/`, `src/skills/`, `src/fx/`, studio screen.
-- Maps + scenes: `src/maps/` only, through the interface in `src/maps/registry.js`.
-  The placeholder `trainingGrounds.js` is meant to be replaced; keep the board
-  anchor at 8x4 tiles and provide `cameras.battle` / `cameras.home`.
+- Maps + scenes: `src/maps/` (interface in `registry.js`), the Home / World map /
+  Chapter screens and `src/ui/scenes.css`.
+  - `maps/arenas/`: one battle arena per chapter (Sky Sanctum, Forest Grove,
+    Volcanic Forge, Frost Plateau). All share the 8x4 board anchor and battle
+    camera in `arenas/shell.js`; keep props clear of the grid (`nearBoard`).
+  - `maps/scenes/`: Skyward Haven (home hub, exposes `hotspots`), world map, chapter map.
+  - `maps/kit/`: MapBuilder (materials, sky, lights, static baking), props,
+    landmarks, painted canvas textures, per-chapter themes.
+  - `maps/chapters.js`: 4 chapters x 6 stages over the global stage numbers the
+    battle code and save already use; BattleScreen picks the arena from it.
 
 ## Conventions
 - Landscape 16:9. UI is authored at 1280x720 (`src/ui/styles.css`) and scaled.

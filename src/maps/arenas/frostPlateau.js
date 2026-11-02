@@ -68,9 +68,9 @@ export default registerMap({
 
     // ---- banners
     P.banner(b, { pos: [-5.8, 0, -3.6], color: '#4f7dff', emblem: 'star' });
-    P.banner(b, { pos: [-5.6, 0, -0.4], color: '#4f7dff', emblem: 'snow', h: 2.4 });
+    P.banner(b, { pos: [-5.3, 0, -0.7], color: '#4f7dff', emblem: 'snow', h: 2.4 });
     P.banner(b, { pos: [5.8, 0, -3.6], color: '#e8466a', emblem: 'swords' });
-    P.banner(b, { pos: [5.6, 0, -0.4], color: '#e8466a', emblem: 'moon', h: 2.4 });
+    P.banner(b, { pos: [5.3, 0, -0.7], color: '#e8466a', emblem: 'moon', h: 2.4 });
 
     // ---- snowy pines, rocks, ice spikes
     for (let i = 0; i < 30; i++) {

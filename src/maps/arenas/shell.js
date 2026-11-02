@@ -7,8 +7,12 @@ export const BOARD_HALF_W = (BOARD.cols * BOARD.tile) / 2; // 4.48
 export const BOARD_Z0 = BOARD.center[2] - (BOARD.rows * BOARD.tile) / 2; // back edge
 export const BOARD_Z1 = BOARD.center[2] + (BOARD.rows * BOARD.tile) / 2; // front edge
 
-/** Battle camera: high three-quarter view, back of the arena visible under the VS bar. */
-export const BATTLE_CAM = { pos: [0, 6.1, 9.4], look: [0, 0.45, -0.9], fov: 37 };
+/**
+ * Battle camera: high three-quarter view. Kept close enough that heroes'
+ * painted faces stay readable (units ~110px tall at 1280x720), with the gate
+ * crystal still showing just under the VS bar. Tune here, not unitScale.
+ */
+export const BATTLE_CAM = { pos: [0, 5.4, 8.0], look: [0, 0.45, -0.7], fov: 37 };
 
 /** True when (x, z) is on (or within `m` of) the battle grid, so props stay clear of it. */
 export function nearBoard(x, z, m = 0.6) {

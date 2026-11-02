@@ -61,9 +61,9 @@ export default registerMap(
 
       // ---- team banners (blue = you, red = rivals)
       P.banner(b, { pos: [-5.7, 0, -3.6], color: '#4f7dff', emblem: 'star' });
-      P.banner(b, { pos: [-5.6, 0, -0.4], color: '#4f7dff', emblem: 'star', h: 2.4 });
+      P.banner(b, { pos: [-5.3, 0, -0.7], color: '#4f7dff', emblem: 'star', h: 2.4 });
       P.banner(b, { pos: [5.7, 0, -3.6], color: '#e8466a', emblem: 'swords' });
-      P.banner(b, { pos: [5.6, 0, -0.4], color: '#e8466a', emblem: 'swords', h: 2.4 });
+      P.banner(b, { pos: [5.3, 0, -0.7], color: '#e8466a', emblem: 'swords', h: 2.4 });
       P.brazier(b, { pos: [-3.9, 0, -4.9], flame: '#7fc8ff', core: '#ffffff', h: 0.9, stand: wall, bowl: gold, size: 0.8 });
       P.brazier(b, { pos: [3.9, 0, -4.9], flame: '#7fc8ff', core: '#ffffff', h: 0.9, stand: wall, bowl: gold, size: 0.8 });
 

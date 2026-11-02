@@ -6,6 +6,7 @@ import { gradientTexture } from '../core/textures.js';
 import { h, icon } from '../ui/dom.js';
 import { ICONS } from '../ui/icons.js';
 import { ease } from '../core/math.js';
+import { bodyChoice, BODY_LABELS } from '../characters/bodyChoice.js';
 
 const CLIP_LABELS = [
   ['idle', 'Idle'],
@@ -135,8 +136,9 @@ export class StudioScreen {
       );
     tabs.skills = h('div', { class: 'tab-body', hidden: true }, [kit.basic && skillCard(kit.basic, 'Basic'), ...kit.active.map((s) => skillCard(s, 'Active')), kit.passive && skillCard(kit.passive, 'Passive')]);
 
-    // Model specs
+    // Model specs (+ body switch when a hero has Blender variants)
     const pal = Object.entries(def.palette || {});
+    this.bodyBtns = {};
     tabs.model = h(
       'div',
       { class: 'tab-body', hidden: true },
@@ -146,9 +148,19 @@ export class StudioScreen {
         h(
           'tbody',
           {},
-          specRow('Height', `${def.sheet?.heightHeads ?? '?'} heads (${def.sheet?.gameHeight})`),
-          specRow('Head / Body', `${def.sheet?.head} / ${def.sheet?.body}`),
-          specRow('Triangles', stats.tris.toLocaleString('en-US')),
+          specRow('Height', `${def.sheet?.heightHeads ?? '?'} heads (head ${def.sheet?.head}, body ${def.sheet?.body})`),
+          (def.bodies?.length > 1 || null) &&
+            h(
+              'tr',
+              {},
+              h('th', {}, 'Body'),
+              h(
+                'td',
+                { class: 'body-pick' },
+                def.bodies.map((k) => (this.bodyBtns[k] = h('button', { class: 'pill small', onclick: () => this.setBody(k) }, BODY_LABELS[k] || k)))
+              )
+            ),
+          h('tr', {}, h('th', {}, 'Triangles'), (this.trisCell = h('td', {}, stats.tris.toLocaleString('en-US')))),
           specRow('Bones', String(stats.bones)),
           specRow('Clips', Object.keys(def.clips).map(cap).join(', ')),
           specRow('Style', def.sheet?.style || '')
@@ -197,6 +209,7 @@ export class StudioScreen {
     );
     show('anim');
     this.markClip('idle');
+    this.markBody();
     g.ui.append(this.ui);
   }
 
@@ -275,6 +288,25 @@ export class StudioScreen {
     this.zoom += (this.targetZoom - this.zoom) * Math.min(1, dt * 5);
     this.updateCamera(Math.min(1, dt * 6));
     this.hero.update(dt);
+  }
+
+  /** Swap the hero's body (code / Blender variants); the choice applies everywhere. */
+  setBody(key) {
+    bodyChoice.set(this.def.id, key);
+    const old = this.hero;
+    this.hero = new Character(this.def);
+    this.turntable.add(this.hero.root);
+    old.dispose();
+    this.trisCell.textContent = this.hero.built.stats.tris.toLocaleString('en-US');
+    this.markBody();
+    this.markClip('idle');
+    this.hero.setExpression('happy', 1.2);
+  }
+
+  markBody() {
+    const cur = bodyChoice.get(this.def.id, this.def.defaultBody || 'code');
+    const pick = this.hero.built.stats.source === 'code' ? 'code' : cur;
+    for (const [k, b] of Object.entries(this.bodyBtns || {})) b.classList.toggle('active', k === pick);
   }
 
   async exit() {

@@ -95,7 +95,7 @@ async function _load(url) {
     if (bundled?.[url]) buf = Uint8Array.from(atob(bundled[url]), (c) => c.charCodeAt(0)).buffer;
     else if (bundled) return null;
     else {
-      const res = await fetch(url);
+      const res = await fetch(new URL(url, new URL('../../', import.meta.url))); // dev: paths are relative to the repo root
       if (!res.ok) return null;
       buf = await res.arrayBuffer();
     }

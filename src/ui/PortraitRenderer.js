@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { Character } from '../characters/Character.js';
 import { getUnit } from '../characters/registry.js';
+import { bodyChoice } from '../characters/bodyChoice.js';
 
 /**
  * Renders a hero's bust into a transparent PNG (data URL) using the main
@@ -26,7 +27,7 @@ export class PortraitRenderer {
   }
 
   get(unitId, { expression = 'happy', yaw = 0.35, clip = 'idle', t = 0.4 } = {}) {
-    const key = `${unitId}|${expression}|${yaw}|${clip}|${t}`;
+    const key = `${unitId}|${bodyChoice.get(unitId, '')}|${expression}|${yaw}|${clip}|${t}`;
     if (this.cache.has(key)) return this.cache.get(key);
     const def = getUnit(unitId);
     const ch = new Character(def);
@@ -35,6 +36,7 @@ export class PortraitRenderer {
     ch.animator.play(clip, { fade: 0 });
     ch.animator.update(t);
     ch.built.secondary?.(ch, 0, 0);
+    ch.built.afterPose?.();
     ch.root.rotation.y = yaw;
     this.scene.add(ch.root);
     const p = def.portrait || { target: [0, 0.8, 0], distance: 1.3, fov: 26 };

@@ -12,7 +12,7 @@ import { bodyChoice } from '../bodyChoice.js';
 //   generated: image-to-3D model       (assets/lyra/lyra_gen.glb)
 const [blender, generated] = await Promise.all([loadBodyAsset('assets/lyra/lyra.glb'), loadBodyAsset('assets/lyra/lyra_gen.glb')]);
 const BODIES = { code: null, blender, generated };
-const DEFAULT_BODY = 'code'; // switch once a Blender body is approved
+const DEFAULT_BODY = 'blender'; // Blender body (closer to the model sheet); Heroes > Model can switch back
 
 export default registerUnit({
   id: 'lyra',

@@ -34,6 +34,7 @@ export class Character {
     });
     this.animator.play('idle', { fade: 0 });
     this.animator.update(0);
+    built.afterPose?.();
   }
 
   /** Play a clip; resolves when a one-shot ends. opts.onEvent(ev) gets named events. */
@@ -97,6 +98,7 @@ export class Character {
     this.time += dt;
     this.animator.update(dt);
     this.built.secondary?.(this, dt, this.time);
+    this.built.afterPose?.();
 
     if (this.facingTarget !== null) {
       let d = this.facingTarget - this.root.rotation.y;

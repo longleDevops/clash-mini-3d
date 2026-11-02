@@ -69,6 +69,16 @@ Loader and exporter: `src/characters/bodyAsset.js`.
    export_skins=False)`. Export only the body hierarchy (bone empties plus meshes),
    not cameras, lights or reference images.
 
+## Skinned bodies (optional)
+
+A body can instead be one weighted mesh with its own armature, for example from an
+image-to-3D tool. Name its bones like the rig (`upper_arm.L`, `forearm.L`, `hand.L`,
+`thigh.L` and so on are mapped automatically), put it in the blockout's rest pose and
+apply that as its rest pose, and export with `export_skins=True`. Each GLB bone named
+like a rig bone follows that code bone through a fixed rest offset; other bones (root,
+clavicles, toes) follow their parents. The face material swap does not apply here,
+so a skinned body keeps whatever face it has painted in its texture.
+
 ## Lyra's bones
 
 | Bone | Carries |

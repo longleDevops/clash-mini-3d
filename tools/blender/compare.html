@@ -1,0 +1,45 @@
+<!doctype html><html><head><meta charset="utf-8">
+<title>loading</title>
+<script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.172.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.172.0/examples/jsm/"}}</script>
+<style>body{margin:0;background:#2a2050}canvas{display:block}</style></head><body>
+<script type="module">
+import * as THREE from 'three';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+import lyra from '/src/characters/lyra/index.js';
+import { Character } from '/src/characters/Character.js';
+// Code body (left of each pair) vs Blender body (right) in the game renderer.
+// ?glb=/assets/lyra/lyra.glb &views=0,40,180 &pose=skill:0.7 &expr=happy
+import { loadBodyAsset } from '/src/characters/bodyAsset.js';
+import { buildLyra } from '/src/characters/lyra/model.js';
+const params = new URLSearchParams(location.search);
+const glb = await loadBodyAsset(params.get('glb') || '/assets/lyra/lyra.glb');
+if (!glb) document.body.insertAdjacentHTML('afterbegin', '<p style="color:white;font:16px sans-serif">No body GLB at that path.</p>');
+const W = 1600, H = 560;
+const r = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+r.setSize(W, H); r.outputColorSpace = THREE.SRGBColorSpace; r.toneMapping = THREE.NeutralToneMapping;
+document.body.appendChild(r.domElement);
+const scene = new THREE.Scene(); scene.background = new THREE.Color('#2e2458');
+const pm = new THREE.PMREMGenerator(r); scene.environment = pm.fromScene(new RoomEnvironment(), 0.04).texture; scene.environmentIntensity = 0.55;
+scene.add(new THREE.HemisphereLight('#fff4ff', '#4a3a7a', 1.2));
+const sun = new THREE.DirectionalLight('#fff', 2.2); sun.position.set(2, 4, 3); scene.add(sun);
+const views = (params.get('views') || '0,40,180').split(',').map(Number);
+const pose = params.get('pose');
+const defs = [{ ...lyra, build: () => buildLyra({}) }, { ...lyra, build: () => buildLyra({ glb }) }];
+let i = 0; const n = views.length * 2;
+const stats = [];
+for (const deg of views) for (const d of defs) {
+  const c = new Character(d);
+  c.root.position.x = (i - (n - 1) / 2) * 1.05; i++;
+  c.root.rotation.y = deg * Math.PI / 180;
+  scene.add(c.root);
+  if (pose) { const [cn, ct] = pose.split(':'); c.animator.play(cn, { fade: 0 }); c.update(Number(ct)); }
+  c.setExpression(params.get('expr') || 'happy', 0);
+  c.update(0.0001);
+  stats.push(c.built.stats);
+}
+const cam = new THREE.PerspectiveCamera(22, W / H, 0.1, 50);
+cam.position.set(0, 0.87, 9); cam.lookAt(0, 0.62, 0);
+r.render(scene, cam);
+window.__stats = stats;
+document.title = 'ready';
+</script></body></html>

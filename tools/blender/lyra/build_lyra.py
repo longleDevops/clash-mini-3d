@@ -24,7 +24,6 @@ BONES = {
     "base", "hips", "spine", "chest", "neck", "head", "hairBack", "earL", "earR", "armL", "foreArmL", "handL", "armR", "foreArmR", "handR",
     "skirt", "thighL", "shinL", "footL", "thighR", "shinR", "footR", "tail0", "tail1", "tail2", "prop",
 }
-RNG = np.random.default_rng(7)
 
 
 def srgb(hexcolor):
@@ -33,33 +32,39 @@ def srgb(hexcolor):
     return np.where(c <= 0.04045, c / 12.92, ((c + 0.055) / 1.055) ** 2.4)
 
 
-HAIR_DEEP = srgb("#2c2150")
-HAIR_BASE = srgb("#47347a")
-HAIR_SHEEN = srgb("#8468c4")
-HAIR_TIP = srgb("#6a4ab3")
-FUR_LILAC = srgb("#cdbcf5")
+HAIR_DEEP = srgb("#241729")
+HAIR_BASE = srgb("#35223F")
+HAIR_SHEEN = srgb("#5A3D6E")
+FUR_LILAC = srgb("#e3dbfa")
 FUR_WHITE = srgb("#ffffff")
-FUR_BLUSH = srgb("#ffc6e4")
+FUR_BLUSH = srgb("#ffe6f3")
+ROBE_TOP = srgb("#F26BB6")
+ROBE_MID = srgb("#C36EE6")
+ROBE_HEM = srgb("#8559D6")
+OBI_TOP = srgb("#B844AC")
+OBI_LOW = srgb("#9A3BA8")
+COLLAR_WHITE = srgb("#ffffff")
+COLLAR_BLUSH = srgb("#FFE3F4")
 
 # role: (colour, roughness, metallic, double sided, uses vertex colours)
 ROLES = {
     "skin": ("#F8D6C0", 0.8, 0, False, False),
     "face": ("#F8D6C0", 0.8, 0, False, False),
     "hair": ("#ffffff", 0.48, 0, False, True),
-    "hairDeep": ("#2c2150", 0.6, 0, True, False),
-    "kimono": ("#a56ce8", 0.6, 0, False, False),
-    "sleeve": ("#b47ef2", 0.6, 0, False, False),
+    "hairDeep": ("#241729", 0.6, 0, True, False),
+    "kimono": ("#a56ce8", 0.6, 0, False, True),
+    "sleeve": ("#b47ef2", 0.6, 0, False, True),
     "lining": ("#FF6EB4", 0.6, 0, True, False),
     "rose": ("#FF6EB4", 0.55, 0, False, False),
-    "roseSkirt": ("#f765b0", 0.55, 0, True, False),
+    "roseSkirt": ("#f765b0", 0.55, 0, True, True),
     "underSkirt": ("#6A4AB3", 0.6, 0, True, False),
-    "blush": ("#FFE3F4", 0.75, 0, False, False),
+    "blush": ("#FFE3F4", 0.75, 0, False, True),
     "gold": ("#FFD45C", 0.3, 0.6, False, False),
     "amber": ("#E6A42A", 0.35, 0.5, False, False),
     "fur": ("#ffffff", 0.92, 0, False, True),
     "earInner": ("#ff9fcf", 0.8, 0, False, False),
-    "lilac": ("#E4D9FF", 0.75, 0, False, False),
-    "boot": ("#5B3E2E", 0.5, 0, False, False),
+    "lilac": ("#F2EEFF", 0.75, 0, False, False),
+    "boot": ("#4A3226", 0.5, 0, False, False),
     "sole": ("#3a2920", 0.7, 0, False, False),
     "gem": ("#ff63b3", 0.2, 0.1, False, False),
     "dark": ("#2B2540", 0.6, 0, False, False),
@@ -105,12 +110,18 @@ def mix(a, b, t):
     return a + (b - a) * t[..., None] if t.ndim else a + (b - a) * t
 
 
+def robe(t):
+    """The outer robe's gradient: pink-magenta at the top, through orchid, to purple at the hem."""
+    t = np.asarray(t, dtype=float)
+    return np.where((t < 0.5)[..., None], mix(ROBE_TOP, ROBE_MID, np.clip(t * 2, 0, 1)), mix(ROBE_MID, ROBE_HEM, np.clip(t * 2 - 1, 0, 1)))
+
+
 def spow(x, e):
     return np.sign(x) * np.abs(x) ** e
 
 
-def spline(points, rows):
-    """Catmull-Rom through the points, resampled evenly by length into rows + 1 samples."""
+def spline(points, rows, spacing=None):
+    """Catmull-Rom through the points, resampled by length into rows + 1 samples: evenly, or at the given 0 to 1 spacing."""
     p = np.asarray(points, dtype=float)
     q = np.vstack([2 * p[0] - p[1], p, 2 * p[-1] - p[-2]])
     seg = len(p) - 1
@@ -120,7 +131,7 @@ def spline(points, rows):
     a, b, c, d = q[i], q[i + 1], q[i + 2], q[i + 3]
     dense = 0.5 * (2 * b + (c - a) * f + (2 * a - 5 * b + 4 * c - d) * f**2 + (3 * b - a - 3 * c + d) * f**3)
     length = np.concatenate([[0], np.cumsum(np.linalg.norm(np.diff(dense, axis=0), axis=1))])
-    want = np.linspace(0, length[-1], rows + 1)
+    want = np.linspace(0, length[-1], rows + 1) if spacing is None else np.asarray(spacing) * length[-1]
     return np.stack([np.interp(want, length, dense[:, k]) for k in range(3)], axis=1)
 
 
@@ -247,7 +258,7 @@ class Body:
                 if role not in slot_of:
                     slot_of.append(role)
                 verts.append(v @ to_local[:3, :3].T + to_local[:3, 3])
-                colors.append(np.ones((len(v), 3)) if c is None else c)
+                colors.append(np.tile(srgb(ROLES[role][0]), (len(v), 1)) if c is None else c)
                 faces.extend(tuple(i + offset for i in face) for face in f)
                 slots.extend([slot_of.index(role)] * len(f))
                 flags.extend([shade] * len(f))
@@ -294,16 +305,15 @@ def tube(body, bone, role, path, radius, sides=6, closed=False, flat=None, norma
         body.add(bone, role, *capped(grid, cap, cap))
 
 
-def lock(body, bone, pts, half_width, thick=0.34, rows=10, sides=6, normal=(0, 1, 0), start=0.35, tip=2.2, lens=1.25, band=None, palette=None, role="hair", carry=False, soft_end=False):
-    """One chunky lock of hair: flattened across its normal, swelling from the root and tapering to a point. Dark on its
-    underside and violet towards the tip; band=(height, spread) adds a stripe of sheen at a world height, so the sheen
-    lines up across neighbouring locks like the ring of light on anime hair. palette(t) replaces all of that.
-    soft_end rounds the last stretch into a ringlet instead of a flat point."""
-    path = spline(pts, rows)
-    t = np.linspace(0, 1, rows + 1)
+def lock(body, bone, pts, half_width, thick=0.5, rows=10, sides=7, normal=(0, 1, 0), start=0.45, tip=2.2, lens=1.0, palette=None, role="hair", carry=False, soft_end=True):
+    """One soft clump of hair, like a piece of sculpted clay: swelling from the root and tapering to a rounded end. Dark on
+    its underside with a quiet highlight along its top. palette(t) replaces that colouring. soft_end=False ends in a point."""
+    # A soft end needs its rows packed towards the tip, to round off instead of stopping short.
+    t = 1 - (1 - np.linspace(0, 1, rows + 1)) ** (1.8 if soft_end else 1.0)
+    path = spline(pts, rows, t)
     s, u = (carried_frames if carry else frames)(path, normal)
     w = half_width * (start + (1 - start) * smooth(0.0, 0.24, t)) * (1 - t**tip) ** (0.55 if soft_end else 0.85) + 0.0012
-    h = w * (thick + (0.9 - thick) * smooth(0.6, 0.88, t) if soft_end else thick) + 0.0006
+    h = w * (thick + (0.85 - thick) * smooth(0.6, 0.9, t) if soft_end else thick) + 0.0006
     a = np.linspace(0, 2 * math.pi, sides, endpoint=False)
     ca, sa = np.cos(a), np.sin(a)
     across = ca[None, :, None] * s[:, None, :] * w[:, None, None]
@@ -314,14 +324,8 @@ def lock(body, bone, pts, half_width, thick=0.34, rows=10, sides=6, normal=(0, 1
     else:
         top = smooth(-0.9, 0.3, sa)[None, :]
         c = mix(HAIR_DEEP, HAIR_BASE, np.broadcast_to(top, (rows + 1, sides)))
-        c = mix(c, HAIR_TIP, np.broadcast_to(0.55 * smooth(0.55, 1.0, t)[:, None], (rows + 1, sides)))
-        ridge = np.exp(-(((ca[None, :] - 0.2) / 0.62) ** 2)) * smooth(-0.2, 0.5, sa)[None, :]
-        if band is not None:
-            wobble = RNG.uniform(-0.012, 0.012)
-            ridge = ridge * np.exp(-(((grid[..., 2] - band[0] - wobble) / band[1]) ** 2))
-        else:
-            ridge = ridge * np.exp(-(((t[:, None] - 0.42) / 0.3) ** 2))
-        c = mix(c, HAIR_SHEEN, ridge * 0.85)
+        ridge = np.exp(-(((ca[None, :] - 0.15) / 0.7) ** 2)) * smooth(-0.2, 0.6, sa)[None, :] * np.exp(-(((t[:, None] - 0.42) / 0.34) ** 2))
+        c = mix(c, HAIR_SHEEN, ridge * 0.7)
     verts, faces = capped(grid)
     body.add(bone, role, verts, faces, colors=c.reshape(-1, 3))
 
@@ -364,7 +368,7 @@ def surface_y(x, z, lift=0.0, side=-1):
 
 def hairline(x):
     """Height of the hairline on the front of the head."""
-    return 0.355 - 0.16 * smooth(0.0, 0.2, np.abs(x)) ** 1.2
+    return 0.375 - 0.18 * smooth(0.0, 0.2, np.abs(x))
 
 
 def build_head(body, B):
@@ -412,12 +416,12 @@ def build_cap(body, B):
         p = head_point(v, u)
         return head_point(v, u, lift_at(p)) + o
 
-    verts, faces = polar(fn, 18, 30)
+    verts, faces = polar(fn, 22, 36)
     local = verts - o
-    v0 = head_point(*_param_grid(18, 30))
+    v0 = head_point(*_param_grid(22, 36))
     lifts = lift_at(v0)
     keep = [f for f in faces if lifts[list(f)].max() > -0.004]
-    colors = mix(HAIR_DEEP, HAIR_BASE, 0.6 + 0.4 * smooth(0.15, 0.36, local[:, 2]))
+    colors = mix(HAIR_DEEP, HAIR_BASE, 0.7 + 0.3 * smooth(0.15, 0.36, local[:, 2]))
     body.add("head", "hair", verts, keep, colors=colors, ref=o + [0, 0, HEAD_CZ])
 
 
@@ -443,110 +447,93 @@ def on_front(o, xz, lift):
 
 
 def build_fringe(body, B):
-    """Middle-parted fringe of pointed locks. Over the eyes the tips stay at or above 0.21 m, as the painted face needs."""
+    """Soft curtain bangs from a middle parting, sweeping to both sides so the centre of the forehead shows skin. Over the
+    eyes their lower edge stays at or above 0.21 m, as the painted face needs."""
     o = B["head"][0]
     n = head_normal(o)
-    # (root x, root z), (bulge x, bulge z), (tip x, tip z), width, lift
+    # (x, z) control points on the front of the head, half width, centre-line lift off the skin
     fan = [
-        ((0.014, 0.392), (0.03, 0.345), (0.036, 0.262), 0.046, 0.024),
-        ((0.022, 0.402), (0.068, 0.335), (0.074, 0.226), 0.062, 0.03),
-        ((0.03, 0.408), (0.112, 0.335), (0.122, 0.218), 0.066, 0.034),
-        ((0.04, 0.408), (0.158, 0.325), (0.166, 0.214), 0.066, 0.032),
-        ((0.06, 0.402), (0.196, 0.31), (0.206, 0.19), 0.06, 0.03),
+        (((0.035, 0.4), (0.095, 0.372), (0.155, 0.318), (0.2, 0.25), (0.222, 0.185)), 0.07, 0.024),
+        (((0.02, 0.405), (0.075, 0.386), (0.13, 0.346), (0.175, 0.296), (0.2, 0.25)), 0.064, 0.03),
+        (((0.01, 0.392), (0.045, 0.366), (0.095, 0.325), (0.14, 0.28), (0.168, 0.235)), 0.056, 0.02),
     ]
     for sx in (-1, 1):
-        for (rx, rz), (mx, mz), (tx, tz), w, lift in fan:
-            mid = (rx + (mx - rx) * 0.5 + 0.004, (rz + mz) * 0.5 + 0.012)
-            xz = [(sx * rx, rz), (sx * mid[0], mid[1]), (sx * mx, mz), (sx * (mx + tx) * 0.5, (mz + tz) * 0.5), (sx * tx, tz)]
-            lifts = [lift, lift, lift * 0.85, lift * 0.65, lift * 0.4]
-            lock(body, "head", on_front(o, xz, lifts), w, thick=0.42, rows=8, sides=5, normal=n, start=0.55, tip=2.6)
+        for xz, w, lift in fan:
+            pts = on_front(o, [(sx * x, z) for x, z in xz], [lift, lift, lift * 0.9, lift * 0.75, lift * 0.55])
+            lock(body, "head", pts, w, thick=0.32, rows=10, sides=8, normal=n, start=0.55, tip=2.4)
 
 
 def build_crown(body, B):
-    """Big locks flowing from the parting over the top and sides of the skull, so the cap reads as chunky hair."""
+    """A few broad, low clumps from the parting over the top and sides of the skull, so the cap reads as sculpted hair."""
     o = B["head"][0]
     n = head_normal(o)
+    center = np.array([0, 0, HEAD_CZ])
     for sx in (-1, 1):
-        for i, az in enumerate((12, 42, 72, 102, 132, 162)):
+        for i, az in enumerate((18, 62)):
             a = math.radians(az)
-            way = np.array([sx * math.cos(a) * 1.0, math.sin(a), 0.0])
-            root = np.array([sx * 0.012, -0.03 + 0.08 * (i / 5), 0.405])
-            pts = []
-            for k, (t, z) in enumerate(((0.0, 0.0), (0.09, 0.402), (0.17, 0.355), (0.215, 0.285), (0.235, 0.2))):
-                if k == 0:
-                    pts.append(root)
-                    continue
-                d = np.array([way[0] * t * 1.02, root[1] + way[1] * t * 0.9, z])
-                pts.append(d)
-            pts = np.array(pts)
-            # Lift each point just off the cap.
-            for p in pts[1:]:
-                rx, ry = head_radii(p[2])
-                k = (np.abs(p[0] / (rx + 0.05)) ** HEAD_E + np.abs(p[1] / (ry + 0.05)) ** HEAD_E + np.abs((p[2] - HEAD_CZ) / (HEAD_RZ + 0.05)) ** HEAD_E) ** (1 / HEAD_E)
-                c = np.array([0, 0, HEAD_CZ])
-                p[:] = c + (p - c) / k
-            lock(body, "head", pts + o, 0.092, thick=0.34, rows=7, sides=5, normal=n, start=0.5, tip=2.4, band=(0.905, 0.04))
+            way = np.array([sx * math.cos(a), math.sin(a)])
+            root_y = -0.04 + 0.05 * i
+            pts = [np.array([sx * 0.012, root_y, 0.405])]
+            for t, z in ((0.09, 0.402), (0.17, 0.355), (0.215, 0.285), (0.235, 0.21)):
+                q = np.array([way[0] * t, root_y + way[1] * t * 0.9, z])
+                rx, ry = head_radii(z)
+                k = (np.abs(q[0] / (rx + 0.04)) ** HEAD_E + np.abs(q[1] / (ry + 0.04)) ** HEAD_E + np.abs((z - HEAD_CZ) / (HEAD_RZ + 0.04)) ** HEAD_E) ** (1 / HEAD_E)
+                pts.append(center + (q - center) / k)
+            lock(body, "head", np.array(pts) + o, 0.105, thick=0.26, rows=7, sides=7, normal=n, start=0.5, tip=3.0)
 
 
 def build_side_locks(body, B):
-    """Locks framing the face, from the temple past the jaw, curling in at the ends. Head-bone space."""
+    """The side volume at the cheeks: two soft clumps a side from the temple past the jaw, turning in at the ends."""
     o = B["head"][0]
     n = lambda p: unit(p - (o + [0, 0.02, HEAD_CZ]))
     for sx in (-1, 1):
-        front = [(0.178, -0.105, 0.33), (0.222, -0.118, 0.25), (0.236, -0.118, 0.16), (0.232, -0.115, 0.07), (0.212, -0.122, -0.01), (0.18, -0.142, -0.065), (0.158, -0.15, -0.098)]
-        mid = [(0.2, -0.06, 0.33), (0.25, -0.078, 0.22), (0.262, -0.08, 0.1), (0.262, -0.082, -0.01), (0.25, -0.1, -0.1), (0.222, -0.13, -0.16), (0.195, -0.145, -0.185)]
-        rear = [(0.215, -0.01, 0.31), (0.262, -0.02, 0.2), (0.278, -0.02, 0.08), (0.285, -0.02, -0.04), (0.28, -0.03, -0.13), (0.26, -0.065, -0.2), (0.228, -0.09, -0.225)]
-        for pts, w, thick in ((rear, 0.09, 0.42), (mid, 0.094, 0.42), (front, 0.074, 0.42)):
-            p = np.array(pts) * [sx, 1, 1] + o
-            lock(body, "head", p, w, thick=thick, rows=11, sides=5, normal=n, start=0.55, tip=2.0, band=(0.76, 0.05))
+        rear = [(0.215, -0.03, 0.335), (0.268, -0.04, 0.235), (0.288, -0.045, 0.115), (0.288, -0.05, -0.01), (0.268, -0.075, -0.11), (0.238, -0.1, -0.15)]
+        front = [(0.19, -0.1, 0.335), (0.236, -0.115, 0.25), (0.248, -0.115, 0.16), (0.24, -0.115, 0.06), (0.216, -0.125, -0.02), (0.19, -0.14, -0.06)]
+        for pts, w in ((rear, 0.09), (front, 0.074)):
+            lock(body, "head", np.array(pts) * [sx, 1, 1] + o, w, thick=0.44, rows=12, sides=8, normal=n, start=0.6, tip=2.1)
 
 
 def build_strands(body, B):
-    """A few thin strands that break the silhouette: two on the crown and wisps at the sides."""
+    """One small soft tuft at the parting, which is all the hair needs to break its outline."""
     o = B["head"][0]
-    n = (0, -1, 0)
-    lock(body, "head", np.array([(0.01, 0.0, 0.415), (0.028, -0.02, 0.45), (0.065, -0.012, 0.478), (0.112, 0.012, 0.468)]) + o, 0.024, thick=0.5, rows=6, sides=4, normal=n, start=0.7, tip=2.0)
-    lock(body, "head", np.array([(-0.012, 0.012, 0.415), (-0.03, 0.0, 0.44), (-0.058, 0.012, 0.452), (-0.09, 0.035, 0.44)]) + o, 0.018, thick=0.5, rows=6, sides=4, normal=n, start=0.7, tip=2.0)
-    for sx in (-1, 1):
-        wisp = np.array([(0.225, 0.04, 0.27), (0.285, 0.05, 0.2), (0.315, 0.05, 0.13), (0.345, 0.07, 0.085)]) * [sx, 1, 1] + o
-        lock(body, "head", wisp, 0.024, thick=0.45, rows=6, sides=4, normal=n, start=0.7, tip=2.0)
+    lock(body, "head", np.array([(0.004, -0.01, 0.42), (0.018, -0.02, 0.452), (0.05, -0.014, 0.474), (0.086, 0.004, 0.468)]) + o, 0.02, thick=0.7, rows=6, sides=6, normal=(0, -1, 0), start=0.8, tip=2.0)
 
 
-def back_path(az, z_end, r_end, wave, phase, curl, curl_r=0.05):
-    """Control points of one back lock, world space. az is around the back: 0 straight behind, + towards her left.
-    The waves share one phase along the height, so neighbouring locks flow together."""
+def back_path(az, z_end, r_end, wave, phase, curl, curl_r=0.09):
+    """Control points of one back clump, world space. az is around the back: 0 straight behind, + towards her left.
+    The waves share one phase along the height, so neighbouring clumps flow together."""
     az0 = math.radians(az)
     pts = []
     heights = [z for z in (0.97, 0.9, 0.81, 0.72, 0.63, 0.54, 0.46, 0.38) if z > z_end + 0.04] + [z_end]
     for z in heights:
-        r = float(np.interp(z, [0.3, 0.42, 0.55, 0.72, 0.81, 0.9, 0.97], [r_end, 0.262, 0.256, 0.25, 0.24, 0.212, 0.11]))
+        r = float(np.interp(z, [0.3, 0.42, 0.55, 0.72, 0.81, 0.9, 0.97], [r_end, 0.262, 0.256, 0.25, 0.24, 0.205, 0.1]))
         fall = float(smooth(0.72, 0.52, z))
         a = az0 * (1 - 0.3 * fall) if abs(az) > 60 else az0
         depth = 0.86 + 0.2 * fall
         y0 = 0.03 + 0.02 * fall
-        swing = wave * float(smooth(0.82, 0.58, z)) * math.sin(z * 24.0 + phase)
+        reach = wave * float(smooth(0.82, 0.58, z))
         rad = np.array([math.sin(a), math.cos(a) * depth])
         tan = np.array([math.cos(a), -math.sin(a) * depth])
-        xy = rad * (r + 0.28 * wave * float(smooth(0.82, 0.58, z)) * math.cos(z * 24.0 + phase)) + tan * swing
+        xy = rad * (r + 0.3 * reach * math.cos(z * 18.0 + phase)) + tan * reach * math.sin(z * 18.0 + phase)
         y = y0 + xy[1]
-        # Below the jaw, the locks at her sides stay behind the shoulders.
+        # Below the jaw, the clumps at her sides stay behind the shoulders.
         if abs(az) > 60:
             y = max(y, 0.07 * fall + y * (1 - fall))
         pts.append((xy[0], y, z))
     end = np.array(pts[-1])
     radial = unit(np.array([end[0], end[1] - 0.05, 0.0]))
     side = np.array([radial[1], -radial[0], 0.0]) * curl
-    hook = unit(side + radial * 0.3)
-    for deg, k in ((40, 1.0), (80, 1.0), (120, 0.95), (160, 0.85), (195, 0.72)):
+    hook = unit(side + radial * 0.35)
+    for deg, k in ((30, 1.0), (60, 1.0), (90, 1.0), (118, 0.96), (142, 0.9)):
         th = math.radians(deg)
         pts.append(tuple(end + (hook * (1 - math.cos(th)) + np.array([0, 0, -1.0]) * math.sin(th)) * curl_r * k))
     return np.array(pts)
 
 
 def build_back_hair(body, B):
-    """The big wavy back hair on its own bone: a dark curtain behind, then broad locks over it with curled ends."""
+    """The back hair on its own bone: one big soft mass down to the hips, made of a few broad wavy clumps with round curled ends."""
     hb = "hairBack"
-    # The curtain: an open shell around the back, behind the torso and sleeves.
+    # A dark filler behind the clumps, open at the front, behind the torso and sleeves.
     rows, cols = 8, 24
     z = np.linspace(0.96, 0.36, rows)
     a = np.linspace(-1.95, 1.95, cols)
@@ -556,7 +543,7 @@ def build_back_hair(body, B):
     x = r * np.sin(aa * (1 - 0.3 * fall))
     y = 0.03 + 0.02 * fall + r * np.cos(aa * (1 - 0.3 * fall)) * (0.82 + 0.2 * fall)
     y = np.where(fall > 0, np.maximum(y, 0.05 * fall + y * (1 - fall)), y)
-    grid = np.stack([x, y, zz + 0.012 * np.sin(aa * 6.0) * smooth(0.5, 0.36, zz)], axis=-1)
+    grid = np.stack([x, y, zz], axis=-1)
     body.add(hb, "hairDeep", grid.reshape(-1, 3), grid_faces(rows, cols, closed=False), ref=(0, 0.02, 0.6))
     center = np.array([0, 0.04, 0.0])
 
@@ -565,95 +552,93 @@ def build_back_hair(body, B):
         d[:, 2] = 0.15 * (p[:, 2] - 0.8)
         return unit(d)
 
-    # Broad locks, outer ones first so nearer ones sit on top. (az, end height, end radius, curl direction, half width)
-    big = [
-        (-128, 0.4, 0.262, 1, 0.066),
-        (128, 0.4, 0.262, -1, 0.066),
-        (-106, 0.33, 0.268, 1, 0.074),
-        (106, 0.33, 0.268, -1, 0.074),
-        (-84, 0.31, 0.268, 1, 0.078),
-        (84, 0.3, 0.268, -1, 0.078),
-        (-62, 0.32, 0.262, 1, 0.08),
-        (62, 0.3, 0.262, -1, 0.08),
-        (-40, 0.33, 0.255, -1, 0.08),
-        (40, 0.31, 0.255, 1, 0.08),
-        (-14, 0.34, 0.25, 1, 0.082),
-        (14, 0.32, 0.25, -1, 0.082),
+    # Outer clumps first, so nearer ones sit on top. (az, end height, end radius, curl direction, half width)
+    clumps = [
+        (-112, 0.42, 0.262, 1, 0.108),
+        (112, 0.42, 0.262, -1, 0.108),
+        (-74, 0.37, 0.268, 1, 0.132),
+        (74, 0.36, 0.268, -1, 0.132),
+        (-37, 0.36, 0.258, -1, 0.14),
+        (37, 0.35, 0.258, 1, 0.14),
+        (0, 0.345, 0.252, 1, 0.142),
     ]
-    for az, z_end, r_end, curl, w in big:
-        pts = back_path(az, z_end, r_end, 0.028, phase=0.5 + az * 0.006, curl=curl, curl_r=0.07)
-        lock(body, hb, pts, w, thick=0.4, rows=16, sides=6, normal=radial, start=0.55, tip=3.6, lens=1.2, band=(0.73, 0.055), carry=True, soft_end=True)
-    # Shorter locks on top to break up the mass, and thin strands that leave the outline.
-    for az, z_end, r_end, w, curl in ((-50, 0.5, 0.275, 0.054, -1), (28, 0.47, 0.272, 0.054, 1), (-4, 0.55, 0.268, 0.052, -1), (72, 0.53, 0.28, 0.05, 1), (-96, 0.56, 0.276, 0.05, -1), (-26, 0.44, 0.27, 0.05, 1)):
-        pts = back_path(az, z_end, r_end, 0.028, phase=0.5 + az * 0.006, curl=curl, curl_r=0.045)
-        pts[:, 1] += 0.016
-        lock(body, hb, pts, w, thick=0.4, rows=11, sides=5, normal=radial, start=0.55, tip=3.4, band=(0.73, 0.055), carry=True, soft_end=True)
-    for az, z_end, r_end, curl in ((-96, 0.42, 0.31, -1), (96, 0.45, 0.31, 1), (-34, 0.3, 0.29, -1), (52, 0.28, 0.295, 1)):
-        pts = back_path(az, z_end, r_end, 0.03, phase=0.5 + az * 0.006, curl=curl, curl_r=0.026)
-        lock(body, hb, pts, 0.014, thick=0.5, rows=9, sides=4, normal=radial, start=0.8, tip=2.2, carry=True)
+    for az, z_end, r_end, curl, w in clumps:
+        pts = back_path(az, z_end, r_end, 0.03, phase=0.5 + az * 0.005, curl=curl)
+        lock(body, hb, pts, w, thick=0.4, rows=18, sides=9, normal=radial, start=0.22, tip=3.4, carry=True)
 
 
 def build_ears(body, B):
+    """Large soft fox ears: broad rounded triangles, thick and a little dished in front, white with a faint lilac base,
+    a big pink inner ear and a white tuft of fluff at its base."""
     for bone, sx in (("earL", 1), ("earR", -1)):
         o, R = B[bone]
 
         def world(p):
             return p @ R.T + o
 
-        # The back of the ear: a tall leaf, round behind and dished in front.
-        rows, cols = 13, 12
+        rows, cols = 13, 16
         t = np.linspace(0, 1, rows)
-        z = -0.04 + 0.375 * t
-        w = 0.105 * (1 - t) ** 0.72 * (0.86 + 0.14 * smooth(0, 0.3, t)) + 0.0015
-        d = 0.064 * (1 - t) ** 0.62 + 0.001
+        z = -0.035 + 0.27 * t
+        w = 0.066 * (1 - t**1.9) ** 0.72 + 0.002
+        d = 0.042 * (1 - t**2.2) ** 0.6 + 0.002
+        sweep = sx * 0.03 * smooth(0.0, 1.0, t)
         a = np.linspace(0, 2 * math.pi, cols, endpoint=False)
         ca, sa = np.cos(a), np.sin(a)
-        back = np.where(sa > 0, sa, sa * 0.32)  # +y is behind; the front is much shallower
-        grid = np.stack([np.outer(w, spow(ca, 0.8)), np.outer(d, back), np.repeat(z[:, None], cols, axis=1)], axis=-1)
-        # The outer edge of each ear sweeps out a little, like a fox's.
-        grid[..., 0] += sx * 0.018 * smooth(0.2, 1, t)[:, None]
-        c = mix(FUR_LILAC, FUR_WHITE, smooth(0.0, 0.62, t))
-        colors = np.repeat(c[:, None, :], cols, axis=1)
-        verts, faces = capped(world(grid.reshape(rows, cols, 3)))
+        back = np.where(sa > 0, sa, sa * 0.42)  # +y is behind; the front is shallower
+        grid = np.stack([np.outer(w, ca) + sweep[:, None], np.outer(d, back), np.repeat(z[:, None], cols, axis=1)], axis=-1)
+        colors = np.repeat(mix(FUR_LILAC, FUR_WHITE, smooth(0.0, 0.55, t))[:, None, :], cols, axis=1)
+        verts, faces = capped(world(grid))
         body.add(bone, "fur", verts, faces, colors=colors.reshape(-1, 3))
-        # The pink inside, set into the front.
-        rows2, cols2 = 9, 8
+        # The pink inner ear, lying on the front of the ear.
+        rows2, cols2 = 9, 12
         t2 = np.linspace(0, 1, rows2)
-        z2 = 0.0 + 0.235 * t2
-        w2 = 0.071 * (1 - t2) ** 0.75 + 0.0015
+        h2 = 0.005 + 0.185 * t2
+        along = (h2 + 0.035) / 0.27
+        w2 = 0.052 * (1 - t2**2.0) ** 0.7 + 0.0015
+        front = (0.042 * (1 - along**2.2) ** 0.6 + 0.002) * 0.42
         a2 = np.linspace(0, 2 * math.pi, cols2, endpoint=False)
-        inner = np.stack([np.outer(w2, spow(np.cos(a2), 0.8)), np.outer(0.008 * (1 - t2) + 0.001, np.sin(a2)) - (0.02 * (1 - t2) + 0.0015)[:, None], np.repeat(z2[:, None], cols2, axis=1)], axis=-1)
-        inner[..., 0] += sx * 0.018 * smooth(0.2, 1, (z2 + 0.04) / 0.34)[:, None]
+        inner = np.stack(
+            [
+                np.outer(w2, np.cos(a2)) + (sx * 0.03 * smooth(0.0, 1.0, along))[:, None],
+                np.outer(0.0045 * (1 - t2**2) + 0.0008, np.sin(a2)) - front[:, None] - 0.001,
+                np.repeat(h2[:, None], cols2, axis=1),
+            ],
+            axis=-1,
+        )
         body.add(bone, "earInner", *capped(world(inner)))
-        # White tufts rising out of the inside of the ear.
-        for x0, h, lean, wd in ((-0.03, 0.074, -0.006, 0.021), (0.002, 0.098, 0.002, 0.024), (0.032, 0.078, 0.01, 0.021)):
-            pts = np.array([(x0, -0.018, 0.0), (x0 * 1.05, -0.03, h * 0.5), (x0 + lean, -0.026, h)])
-            lock(body, bone, world(pts), wd, thick=0.5, rows=4, sides=5, normal=lambda p: np.broadcast_to(R @ np.array([0.0, -1.0, 0.0]), p.shape), start=0.8, tip=2.2, soft_end=True, palette=lambda t: np.repeat(FUR_WHITE[None, :], len(t), axis=0), role="fur")
+        # A soft tuft of fluff at the inner base.
+        for center, radii in (((0.0, -0.028, 0.035), (0.03, 0.016, 0.034)), ((-0.026, -0.025, 0.024), (0.02, 0.014, 0.024)), ((0.027, -0.025, 0.026), (0.02, 0.014, 0.025))):
+            v, f = ellipsoid(center, radii, rows=5, cols=8)
+            body.add(bone, "fur", world(v), f, colors=np.tile(FUR_WHITE, (len(v), 1)))
 
 
-def flower(body, bone, center, normal, size, petal="rose", middle="gold", rows=5, cols=7):
+def flower(body, bone, center, normal, size, petal="rose", middle="gold"):
+    """A soft five-petal flower as one smooth piece, scalloped around its edge, with a round centre."""
     R = basis(normal)
-    for i in range(5):
-        a = i / 5 * 2 * math.pi + math.pi / 2
-        c = np.asarray(center) + R @ np.array([math.cos(a) * size * 0.92, math.sin(a) * size * 0.92, 0.0])
-        Rz = np.array([[math.cos(a), -math.sin(a), 0], [math.sin(a), math.cos(a), 0], [0, 0, 1]])
-        body.add(bone, petal, *ellipsoid(c, (size * 0.92, size * 0.68, size * 0.4), R @ Rz, rows, cols))
-    body.add(bone, middle, *ellipsoid(np.asarray(center) + R @ np.array([0, 0, size * 0.3]), (size * 0.5, size * 0.5, size * 0.36), R, 4, 7))
+
+    def fn(v, u):
+        lobe = 0.62 + 0.38 * np.abs(np.cos(2.5 * u)) ** 0.7
+        rho = np.sin(v) ** 0.75 * lobe * size * 1.5
+        p = np.stack([rho * np.cos(u), rho * np.sin(u), np.cos(v) * size * 0.42], axis=-1)
+        return p @ R.T + np.asarray(center)
+
+    body.add(bone, petal, *polar(fn, 5, 20))
+    body.add(bone, middle, *ellipsoid(np.asarray(center) + R @ np.array([0, 0, size * 0.34]), (size * 0.48, size * 0.48, size * 0.34), R, 4, 8))
 
 
 def bell(body, bone, top, size):
-    """A little temple bell hanging down from a point, with a ring above it."""
-    profile = [(0.0, 1.25), (0.34, 1.18), (0.64, 0.86), (0.8, 0.3), (0.92, -0.25), (1.06, -0.62), (0.96, -0.74), (0.0, -0.68)]
-    p = np.asarray(top, dtype=float) + [0, 0, -1.5 * size]
-    a = np.linspace(0, 2 * math.pi, 9, endpoint=False)
-    rs = np.array([q[0] for q in profile[1:-1]]) * size
-    zs = np.array([q[1] for q in profile[1:-1]]) * size
+    """A round little temple bell hanging from a point, with a loop above it."""
+    profile = [(0.3, 1.05), (0.62, 0.86), (0.82, 0.4), (0.92, -0.1), (1.04, -0.5), (1.12, -0.72), (1.0, -0.84)]
+    p = np.asarray(top, dtype=float) + [0, 0, -1.32 * size]
+    a = np.linspace(0, 2 * math.pi, 12, endpoint=False)
+    rs = np.array([q[0] for q in profile]) * size
+    zs = np.array([q[1] for q in profile]) * size
     grid = np.stack([np.outer(rs, np.cos(a)) + p[0], np.outer(rs, np.sin(a)) + p[1], zs[:, None] * np.ones_like(a) + p[2]], axis=-1)
     body.add(bone, "gold", *capped(grid))
-    body.add(bone, "dark", *ellipsoid(p + [0, 0, -0.78 * size], (0.28 * size,) * 3, rows=3, cols=5))
-    turn = np.linspace(0, 2 * math.pi, 6, endpoint=False)
-    circle = np.stack([np.zeros(6), 0.38 * size * np.cos(turn), 0.38 * size * np.sin(turn)], axis=1) + p + [0, 0, 1.45 * size]
-    tube(body, bone, "gold", circle, 0.13 * size, sides=3, closed=True, normal=(1, 0, 0))
+    body.add(bone, "dark", *ellipsoid(p + [0, 0, -0.9 * size], (0.3 * size,) * 3, rows=4, cols=6))
+    turn = np.linspace(0, 2 * math.pi, 8, endpoint=False)
+    circle = np.stack([np.zeros(8), 0.3 * size * np.cos(turn), 0.3 * size * np.sin(turn)], axis=1) + p + [0, 0, 1.28 * size]
+    tube(body, bone, "gold", circle, 0.1 * size, sides=4, closed=True, normal=(1, 0, 0))
 
 
 def gem(body, bone, center, radii, rot=None):
@@ -666,40 +651,27 @@ def gem(body, bone, center, radii, rot=None):
 
 def build_ornaments(body, B):
     o = B["head"][0]
-    # The tiara: a gold band over the fringe that follows the head, with a gem set in a ring on the forehead.
-    xs = np.linspace(-0.17, 0.17, 19)
-    zs = 0.352 - 1.5 * xs**2
-    path = np.array([(x, float(surface_y(x, z, 0.054)), z) for x, z in zip(xs, zs)]) + o
-    tube(body, "head", "gold", path, 0.0088, sides=6, flat=0.55, normal=head_normal(o))
-    gem_z = 0.312
-    gy = float(surface_y(0.0, gem_z, 0.012))
-    gc = o + np.array([0, gy, gem_z])
-    ring = [(0.031 * math.cos(a), gy + 0.0005, gem_z + 0.038 * math.sin(a)) for a in np.linspace(0, 2 * math.pi, 16, endpoint=False)]
-    tube(body, "head", "gold", np.array(ring) + o, 0.0062, sides=5, closed=True, normal=(0, -1, 0))
-    gem(body, "head", gc + [0, -0.012, 0], np.array((0.022, 0.015, 0.031)))
+    # A small gold chevron on the bare forehead, with a pink gem at its heart. Its arms tuck under the bangs.
     for sx in (-1, 1):
-        # Little gold wings beside the gem, resting on the fringe.
-        wing = [(0.03, gem_z + 0.012), (0.058, gem_z + 0.028), (0.098, gem_z + 0.046)]
-        pts = np.array([(sx * x, float(surface_y(x, z, 0.058)), z) for x, z in wing]) + o
-        lock(body, "head", pts, 0.022, thick=0.45, rows=5, sides=5, normal=(0, -1, 0), start=0.8, tip=1.5, role="gold", palette=lambda t: np.repeat(srgb("#FFD45C")[None, :], len(t), axis=0))
-    # A small drop gem under the setting.
-    dz = 0.262
-    dy = float(surface_y(0.0, dz, 0.006))
-    body.add("head", "gem", *ellipsoid(o + [0, dy, dz], (0.0082, 0.006, 0.0105), rows=4, cols=6), shade=True)
-    tube(body, "head", "gold", np.array([(0, gy, gem_z - 0.04), (0, dy, dz + 0.01)]) + o, 0.0016, sides=4)
+        arm = [(0.0, 0.3), (sx * 0.024, 0.318), (sx * 0.048, 0.34), (sx * 0.068, 0.36)]
+        pts = np.array([(x, float(surface_y(x, z, 0.006)), z) for x, z in arm]) + o
+        path = spline(pts, 6)
+        tube(body, "head", "gold", path, np.linspace(0.0105, 0.0065, len(path)), sides=6, flat=0.55, normal=head_normal(o))
+    gz = 0.322
+    gy = float(surface_y(0.0, gz, 0.012))
+    gem(body, "head", o + np.array([0, gy, gz]), np.array((0.0135, 0.008, 0.021)))
 
-    # Rose flowers and gold bells at the sides of the hair.
+    # At each temple: a cluster of pink flowers with gold centres, and two big gold bells hanging below it.
     for sx in (-1, 1):
-        big = o + np.array([sx * 0.254, -0.075, 0.272])
-        flower(body, "head", big, (sx * 0.72, -0.68, 0.14), 0.035)
-        flower(body, "head", o + np.array([sx * 0.198, -0.03, 0.385]), (sx * 0.62, -0.5, 0.6), 0.025)
-        cord = np.array([big + [sx * 0.008, -0.004, -0.02], big + [sx * 0.022, -0.006, -0.06], big + [sx * 0.024, -0.008, -0.095]])
-        tube(body, "head", "rose", cord, 0.0036, sides=4, normal=(0, -1, 0))
-        bell(body, "head", cord[-1], 0.0235)
-        side = big + [sx * 0.02, 0.05, -0.012]
-        cord2 = np.array([side, side + [sx * 0.006, 0.003, -0.022]])
-        tube(body, "head", "rose", cord2, 0.0032, sides=4, normal=(0, -1, 0))
-        bell(body, "head", cord2[-1], 0.0185)
+        out = (sx * 0.74, -0.64, 0.2)
+        flower(body, "head", o + np.array([sx * 0.262, -0.125, 0.292]), out, 0.031)
+        flower(body, "head", o + np.array([sx * 0.25, -0.092, 0.352]), (sx * 0.72, -0.5, 0.48), 0.024)
+        flower(body, "head", o + np.array([sx * 0.292, -0.062, 0.298]), (sx * 0.94, -0.3, 0.16), 0.024)
+        for at, drop, size in (((0.276, -0.135, 0.255), 0.022, 0.034), ((0.3, -0.075, 0.262), 0.018, 0.03)):
+            start = o + np.array([sx * at[0], at[1], at[2]])
+            end = start + [0, 0, -drop]
+            tube(body, "head", "rose", np.array([start, (start + end) / 2, end]), 0.0034, sides=4, normal=(0, -1, 0))
+            bell(body, "head", end, size)
 
 
 # ---- torso, in world space ----
@@ -728,9 +700,12 @@ def ring_grid(zs, rx, ry, cols, e=2.4, y0=0.0):
 
 def build_torso(body):
     zs = np.array([0.32, 0.39, 0.45, 0.5, 0.54, 0.565, 0.59])
-    body.add("chest", "kimono", *capped(ring_grid(zs, *torso_radii(zs), 22)))
+    grid = ring_grid(zs, *torso_radii(zs), 22)
+    colors = np.repeat(robe(np.interp(zs, [0.39, 0.56], [0.42, 0.0]))[:, None, :], 22, axis=1)
+    verts, faces = capped(grid)
+    body.add("chest", "kimono", verts, faces, colors=colors.reshape(-1, 3))
 
-    # Under-layer showing in the V of the collar.
+    # The inner collar showing in the V, white at the neck and blush lower down.
     rows, cols = 9, 7
     z = np.linspace(0.385, 0.572, rows)
     hw = np.interp(z, [0.385, 0.56, 0.572], [0.024, 0.07, 0.066])
@@ -740,7 +715,8 @@ def build_torso(body):
         grid[i, :, 0] = xs
         grid[i, :, 1] = torso_y(xs, z[i], 0.006)
         grid[i, :, 2] = z[i]
-    body.add("chest", "blush", grid.reshape(-1, 3), grid_faces(rows, cols, closed=False), ref=(0, 0, 0.47))
+    colors = np.repeat(mix(COLLAR_BLUSH, COLLAR_WHITE, smooth(0.4, 0.55, z))[:, None, :], cols, axis=1)
+    body.add("chest", "blush", grid.reshape(-1, 3), grid_faces(rows, cols, closed=False), colors=colors.reshape(-1, 3), ref=(0, 0, 0.47))
 
     # Overlapping V collar, her left side over her right, each lapel running round the back of the neck.
     for sx, lift in ((-1, 0.0035), (1, 0.0085)):
@@ -755,13 +731,13 @@ def build_torso(body):
         if s[at, 0] * sx < 0:
             s = -s
         a = np.linspace(0, 2 * math.pi, 6, endpoint=False)
-        width = 0.021
-        grid = path[:, None, :] + np.cos(a)[None, :, None] * s[:, None, :] * width + spow(np.sin(a), 1.0)[None, :, None] * u[:, None, :] * 0.0062
+        width = 0.017
+        grid = path[:, None, :] + np.cos(a)[None, :, None] * s[:, None, :] * width + np.sin(a)[None, :, None] * u[:, None, :] * 0.0062
         body.add("chest", "rose", *capped(grid))
-        # White inner band towards the V, and gold piping along the outer edge.
-        inner = path - s * (width + 0.0075) - u * 0.001
-        grid = inner[:, None, :] + np.cos(a)[None, :, None] * s[:, None, :] * 0.0095 + np.sin(a)[None, :, None] * u[:, None, :] * 0.0042
-        body.add("chest", "blush", *capped(grid))
+        # White band towards the V, and gold piping along the outer edge.
+        inner = path - s * (width + 0.0095) - u * 0.001
+        grid = inner[:, None, :] + np.cos(a)[None, :, None] * s[:, None, :] * 0.0115 + np.sin(a)[None, :, None] * u[:, None, :] * 0.0046
+        body.add("chest", "blush", grid.reshape(-1, 3), grid_faces(len(path), 6) + [tuple(np.arange(6)[::-1]), tuple(np.arange(6) + 6 * (len(path) - 1))], colors=np.tile(COLLAR_WHITE, (6 * len(path), 1)))
         tube(body, "chest", "gold", path + s * (width + 0.0012) + u * 0.0015, 0.0044, sides=5, normal=outward)
 
 
@@ -769,14 +745,16 @@ def build_obi(body):
     z = np.array([0.296, 0.32, 0.345, 0.37, 0.394])
     rx = np.array([0.136, 0.142, 0.144, 0.142, 0.134])
     ry = np.array([0.114, 0.118, 0.12, 0.118, 0.111])
-    body.add("spine", "rose", *capped(ring_grid(z, rx, ry, 26)))
+    colors = np.repeat(mix(OBI_LOW, OBI_TOP, smooth(0.296, 0.394, z))[:, None, :], 26, axis=1)
+    verts, faces = capped(ring_grid(z, rx, ry, 26))
+    body.add("spine", "kimono", verts, faces, colors=colors.reshape(-1, 3))
     for k in (0, -1):
         a = np.linspace(0, 2 * math.pi, 26, endpoint=False)
         loop = np.stack([(rx[k] + 0.001) * spow(np.cos(a), 2 / 2.4), (ry[k] + 0.001) * spow(np.sin(a), 2 / 2.4), np.full(26, z[k])], axis=1)
         tube(body, "spine", "gold", loop, 0.0075, sides=4, closed=True, normal=lambda p: unit(p * [1, 1, 0]))
     knot = np.array([0.0, -0.128, 0.345])
-    flower(body, "spine", knot, (0, -1, 0.06), 0.04, petal="gold", middle="amber")
-    # Ribbon tails falling over the skirt from under the knot, with gold points.
+    flower(body, "spine", knot, (0, -1, 0.06), 0.034, petal="gold", middle="amber")
+    # Two pink ribbon tails falling over the skirt from under the knot, with gold points.
     for sx in (-1, 1):
         pts = np.array([(sx * 0.012, -0.132, 0.325), (sx * 0.03, -0.158, 0.285), (sx * 0.046, -0.176, 0.235), (sx * 0.052, -0.196, 0.19)])
         path = spline(pts, 7)
@@ -788,7 +766,7 @@ def build_obi(body):
         tip = path[-1]
         d = unit(path[-1] - path[-2])
         points = np.array([tip - d * 0.004, tip + d * 0.014, tip + d * 0.03])
-        lock(body, "spine", points, 0.044, thick=0.3, rows=4, sides=5, normal=(0, -1, 0.1), start=1.0, tip=1.2, role="gold", palette=lambda t: np.repeat(srgb("#FFD45C")[None, :], len(t), axis=0))
+        lock(body, "spine", points, 0.044, thick=0.3, rows=4, sides=5, normal=(0, -1, 0.1), start=1.0, tip=1.2, role="gold", soft_end=False, palette=lambda t: np.tile(srgb("#FFD45C"), (len(t), 1)))
 
 
 def pleats(a, count, amp):
@@ -830,7 +808,8 @@ def build_skirt(body):
     climb = 0.03 * smooth(1.1, gap, np.minimum(a2, 2 * math.pi - a2))
     grid2[..., 2] += (np.linspace(0, 1, 5)[:, None] ** 1.5) * climb
     grid2 = world(grid2)
-    body.add("skirt", "roseSkirt", grid2.reshape(-1, 3), grid_faces(5, 52, closed=False), ref=(0, 0, 0.3))
+    colors = np.repeat(robe(np.linspace(0.45, 1.0, 5))[:, None, :], 52, axis=1)
+    body.add("skirt", "roseSkirt", grid2.reshape(-1, 3), grid_faces(5, 52, closed=False), colors=colors.reshape(-1, 3), ref=(0, 0, 0.3))
     tube(body, "skirt", "gold", grid2[-1] + [0, 0, 0.001], 0.0074, sides=5, normal=lambda p: unit(p * [1, 1, 0]), step=2)
     for col in (0, -1):
         tube(body, "skirt", "gold", spline(grid2[:, col], 6), 0.0058, sides=5, normal=lambda p: unit(p * [1, 1, 0]))
@@ -891,13 +870,13 @@ def build_legs(body, B):
         body.add(f"foot{side}", "sole", *capped(sole))
         a2 = np.linspace(0, 2 * math.pi, 16, endpoint=False)
         cuff = np.stack([ankle[0] + 0.0555 * np.cos(a2), 0.0555 * np.sin(a2), np.full(16, 0.088)], axis=1)
-        tube(body, f"foot{side}", "amber", cuff, 0.0125, sides=6, closed=True, normal=lambda p: unit((p - [ankle[0], 0, 0.088])))
+        tube(body, f"foot{side}", "gold", cuff, 0.0125, sides=6, closed=True, normal=lambda p: unit((p - [ankle[0], 0, 0.088])))
 
 
 def build_sleeve(body, B, arm, fore, sx):
-    """Puffy hanging sleeve on the upper arm. It follows the arm out to the elbow and on along the rest pose of the forearm,
-    hugging the top of the wrist and hanging in a deep pouch below. As on a furisode the pouch is sewn shut below the wrist,
-    so the rose lining shows at the opening, framed by a gold hem."""
+    """A soft, drapey furisode bell hanging from the upper arm. It follows the arm to the elbow and on along the rest pose of
+    the forearm, open at the cuff with a rolled lip and the rose lining inside. Pink at the top fading to purple at the hem,
+    with a gold stripe near the hem."""
     P, Ra = B[arm]
     E, Rf = B[fore]
     d = unit(E - P)
@@ -905,54 +884,49 @@ def build_sleeve(body, B, arm, fore, sx):
     # The centre line: from inside the shoulder, out past the elbow, along the forearm.
     out = np.array([sx, 0, 0.0])
     ctrl = [P - d * 0.02, P + d * 0.055 + out * 0.016, E + out * 0.036 - f * 0.012, E + f * 0.045 + out * 0.03, E + f * 0.085 + out * 0.02]
-    rows, cols = 12, 26
+    rows, cols = 13, 28
     path = spline(ctrl, rows - 1)
     tang = unit(np.gradient(path, axis=0))
     down = np.array([0, 0, -1.0])
     hang = unit(down - (tang @ down)[:, None] * tang)
     side = unit(np.cross(tang, hang))
     t = np.linspace(0, 1, rows)
-    r_up = 0.058 + 0.02 * np.sin(np.minimum(t * 1.5, 1) * math.pi * 0.5) - 0.01 * smooth(0.75, 1, t)
-    r_side = 0.058 + 0.082 * smooth(0.0, 0.8, t) - 0.012 * smooth(0.85, 1, t)
-    r_hang = 0.058 + 0.15 * smooth(0.05, 0.95, t) ** 0.9
+    r_up = 0.06 + 0.026 * smooth(0.0, 0.6, t)
+    r_side = 0.06 + 0.074 * smooth(0.0, 0.85, t)
+    r_hang = 0.06 + 0.105 * smooth(0.05, 1.0, t)
     a = np.linspace(0, 2 * math.pi, cols, endpoint=False)
     cos_a, sin_a = np.cos(a), np.sin(a)
-    # The bottom of the pouch trails back along the sleeve, so the hem slopes.
-    trail = -tang[:, None, :] * (0.05 * smooth(0.45, 1, t)[:, None, None] * np.maximum(cos_a, 0)[None, :, None] ** 1.5)
+    # Soft folds that grow towards the hem, and a hem that trails back on the hanging side.
+    folds = 1 + 0.04 * np.cos(6 * a + 0.6)[None, :] * smooth(0.35, 1.0, t)[:, None]
+    trail = -tang[:, None, :] * (0.045 * smooth(0.45, 1.0, t)[:, None, None] * np.maximum(cos_a, 0)[None, :, None] ** 1.5)
 
     def rings(scale=1.0):
         hangpart = np.where(cos_a > 0, r_hang[:, None], r_up[:, None]) * cos_a[None, :]
-        return path[:, None, :] + scale * (hang[:, None, :] * hangpart[:, :, None] + side[:, None, :] * (r_side[:, None] * sin_a[None, :])[:, :, None]) + trail
+        radial = hang[:, None, :] * hangpart[:, :, None] + side[:, None, :] * (r_side[:, None] * sin_a[None, :])[:, :, None]
+        return path[:, None, :] + scale * radial * folds[:, :, None] + trail
 
-    grid = rings()
-    body.add(arm, "sleeve", grid.reshape(-1, 3), grid_faces(rows, cols) + [tuple(np.arange(cols)[::-1])], ref=(P + E) / 2)
-    # Lining: an open shell a little inside the hem, reaching back past the elbow, with a closed end.
-    lining = rings(scale=0.93)[rows // 2 + 1 :]
+    outer = rings()
+    hem = outer[-1]
+    center = hem.mean(axis=0)
+    # The hem rolls over into the lining, which gives the cloth a soft thickness.
+    lip_out = hem - (hem - center) * 0.03 + tang[-1] * 0.009
+    lip_in = hem - (hem - center) * 0.085 + tang[-1] * 0.006
+    surface = np.concatenate([outer, lip_out[None], lip_in[None]])
+    fade = np.clip(t[:, None] * 0.82 + 0.3 * t[:, None] * np.maximum(cos_a, 0)[None, :], 0, 1)
+    colors = np.concatenate([robe(fade), np.tile(ROBE_HEM, (2, cols, 1))]).reshape(-1, 3)
+    body.add(arm, "sleeve", surface.reshape(-1, 3), grid_faces(rows + 2, cols) + [tuple(np.arange(cols)[::-1])], colors=colors, ref=(P + E) / 2)
+    # The lining, from the lip back past the elbow, with a closed end.
+    lining = np.concatenate([rings(scale=0.9)[rows // 2 + 1 : -1], lip_in[None]])
     r2 = len(lining)
     ids = np.arange(r2 * cols).reshape(r2, cols)
     body.add(arm, "lining", lining.reshape(-1, 3), grid_faces(r2, cols) + [tuple(ids[0])], ref=path[-2] + tang[-2] * 0.5)
-    # The sewn-shut part of the hem: a panel from a chord under the wrist down to the bottom of the hem.
-    hem = grid[-1]
-    end = path[-1]
-    chord_at = 0.05
-    hang_of = np.where(cos_a > 0, r_hang[-1], r_up[-1]) * cos_a
-    order = np.roll(np.arange(cols), cols // 2)
-    arc = [i for i in order if hang_of[i] >= chord_at]
-    strips = 3
-    panel = np.zeros((strips, len(arc), 3))
-    for j, i in enumerate(arc):
-        top = end + hang[-1] * chord_at + side[-1] * r_side[-1] * sin_a[i] + tang[-1] * 0.006
-        for k in range(strips):
-            q = k / (strips - 1)
-            panel[k, j] = top + (hem[i] - top) * q + tang[-1] * 0.012 * math.sin(q * math.pi)
-    body.add(arm, "sleeve", panel.reshape(-1, 3), grid_faces(strips, len(arc), closed=False), ref=end - tang[-1] * 0.12)
-    # Gold hem with a rose band just behind it, and a thin rose edge on the panel.
-    tube(body, arm, "gold", hem, 0.0078, sides=5, closed=True, normal=lambda p: unit(p - hem.mean(axis=0)))
-    tube(body, arm, "rose", panel[0] + tang[-1] * 0.002, 0.0042, sides=4, normal=tang[-1])
-    band = grid[-2] + (grid[-2] - grid[-2].mean(axis=0)) * 0.012
-    tube(body, arm, "rose", band, 0.0072, sides=4, closed=True, normal=lambda p: unit(p - band.mean(axis=0)), flat=0.7, step=2)
+    # The gold stripe near the hem.
+    ring = outer[-3]
+    stripe = ring + (ring - ring.mean(axis=0)) * 0.014
+    tube(body, arm, "gold", stripe, 0.0072, sides=5, closed=True, normal=lambda p: unit(p - stripe.mean(axis=0)), flat=0.65)
     # The round of the shoulder, which keeps the joint covered as the arm turns.
-    body.add(arm, "sleeve", *ellipsoid(P, (0.066, 0.066, 0.066), rows=8, cols=12))
+    v, f = ellipsoid(P, (0.066, 0.066, 0.066), rows=8, cols=12)
+    body.add(arm, "sleeve", v, f, colors=np.tile(ROBE_TOP, (len(v), 1)))
 
 
 def build_forearm_and_hand(body, B, fore, hand, sx):
@@ -976,19 +950,20 @@ def build_forearm_and_hand(body, B, fore, hand, sx):
     body.add(hand, "skin", world(thumb[0]), thumb[1])
 
 
-def fur_colors(t0, t1, tip):
-    """Lilac at the root of the tail, white along it, blush at the tip. t runs 0 to 1 over the whole tail."""
+def fur_colors(t0, t1):
+    """A lilac tint at the root of the tail, white along it, and the faintest blush at the tip. t is 0 to 1 over the whole tail."""
 
     def fn(t):
         tt = t0 + (t1 - t0) * np.asarray(t)
-        c = mix(FUR_LILAC, FUR_WHITE, smooth(0.0, 0.34, tt))
-        return mix(c, FUR_BLUSH, smooth(tip, 1.0, tt))
+        c = mix(FUR_LILAC, FUR_WHITE, smooth(0.0, 0.3, tt))
+        return mix(c, FUR_BLUSH, smooth(0.82, 1.0, tt))
 
     return fn
 
 
 def build_tail(body, B):
-    """Big fluffy tail in three pieces, split at the pivots. Each piece closes in a soft round end that overlaps the next."""
+    """Big fluffy tail in three pieces, split at the pivots: a smooth teardrop with a few large soft clumps. Each piece closes
+    in a round end that overlaps the next."""
     T0, T1, T2 = B["tail0"][0], B["tail1"][0], B["tail2"][0]
     up2 = B["tail2"][1][:, 2]
     tip = T2 + up2 * 0.33
@@ -1000,10 +975,10 @@ def build_tail(body, B):
     ranges = [("tail0", 0.0, joints[0] + 0.07), ("tail1", joints[0] - 0.08, joints[1] + 0.07), ("tail2", joints[1] - 0.08, 1.0)]
 
     def radius(t):
-        return np.interp(t, [0.0, 0.1, 0.3, 0.5, 0.68, 0.82, 0.93, 1.0], [0.045, 0.062, 0.118, 0.142, 0.14, 0.11, 0.062, 0.004])
+        return np.interp(t, [0.0, 0.1, 0.3, 0.5, 0.68, 0.82, 0.93, 1.0], [0.045, 0.07, 0.12, 0.146, 0.146, 0.116, 0.066, 0.008])
 
     for bone, a, b in ranges:
-        rows, cols = 18, 20
+        rows, cols = 16, 20
         tt = np.linspace(a, b, rows)
         path = np.stack([np.interp(tt * total, length, spine[:, k]) for k in range(3)], axis=1)
         s, u = frames(path, (0.2, -0.3, 0.9))
@@ -1011,16 +986,15 @@ def build_tail(body, B):
         ends = np.sqrt(np.clip(1 - (1 - smooth(a, a + 0.05, tt)) ** 2 * 0.96, 0, 1))
         if b < 0.99:
             ends = ends * np.sqrt(np.clip(1 - smooth(b - 0.05, b, tt) ** 2 * 0.96, 0, 1))
-        # Each tier swells slowly and drops off sharply towards the tip, and the tiers stagger around the tail.
-        phase = np.outer(tt * 8.0, np.ones(cols)) + 0.32 * np.sin(5 * A)[None, :] + 0.16 * np.sin(9 * A + 1.3)[None, :]
+        # A few broad clumps that wrap slowly around the tail.
+        phase = tt[:, None] * 3.4 + 0.2 * np.sin(3 * A)[None, :]
         tier = phase - np.floor(phase)
-        lobes = 1 + 0.17 * (smooth(0.0, 0.8, tier) * smooth(1.0, 0.82, tier) - 0.4) + 0.025 * np.cos(7 * A + tt[:, None] * 9)
-        r = (radius(tt) * ends)[:, None] * lobes
+        clumps = 1 + 0.12 * (smooth(0.0, 0.72, tier) * smooth(1.0, 0.82, tier) - 0.45) + 0.05 * np.cos(3 * A[None, :] + tt[:, None] * 7) + 0.022 * np.cos(5 * A[None, :] - tt[:, None] * 5)
+        r = (radius(tt) * ends)[:, None] * clumps
         grid = path[:, None, :] + r[:, :, None] * (np.cos(A)[None, :, None] * s[:, None, :] + np.sin(A)[None, :, None] * u[:, None, :])
-        colors = np.repeat(fur_colors(a, b, 0.74)(np.linspace(0, 1, rows))[:, None, :], cols, axis=1)
-        # The hollows between tiers fall into lilac, which gives the white fur its form.
-        hollow = smooth(0.985, 0.94, lobes)
-        colors = colors + (FUR_LILAC - colors) * (0.3 * hollow)[:, :, None]
+        colors = np.repeat(fur_colors(a, b)(np.linspace(0, 1, rows))[:, None, :], cols, axis=1)
+        # A faint lilac in the hollows between clumps.
+        colors = colors + (FUR_LILAC - colors) * (0.3 * smooth(0.985, 0.93, clumps))[:, :, None]
         verts, faces = capped(grid)
         body.add(bone, "fur", verts, faces, colors=colors.reshape(-1, 3))
 

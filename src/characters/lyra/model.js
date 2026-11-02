@@ -4,6 +4,7 @@ import { FaceCanvas } from '../FaceCanvas.js';
 import { makeMaterials, add, sphere, cyl, roundedBox, fluff, gradientY, lathe, flower, bell, countTris } from '../parts.js';
 import { LYRA_PALETTE as P, LYRA_HEAD as HEAD } from './palette.js';
 import { drawLyraFace } from './face.js';
+import { attachBody } from '../bodyAsset.js';
 import { buildStaff } from './staff.js';
 
 /** 1 model unit -> world units. Lyra is 100u (~1 world unit) tall without ears. */
@@ -16,7 +17,7 @@ export const UNIT = 0.01;
  * trim and obi flower knot, flared sleeves with rose lining, lilac stockings,
  * brown boots, a big white fox tail and her crescent staff.
  */
-export function buildLyra() {
+export function buildLyra({ glb = null } = {}) {
   const m = makeMaterials({
     skin: { color: P.skin, roughness: 0.8 },
     hair: { color: '#46336f', roughness: 0.48, side: THREE.DoubleSide },
@@ -79,6 +80,81 @@ export function buildLyra() {
   // ---------------- head + face ----------------
   const face = new FaceCanvas(drawLyraFace);
   const faceMat = new THREE.MeshStandardMaterial({ map: face.texture, roughness: 0.8 });
+  faceMat.name = 'face';
+  // Body meshes: Blender GLB when one is loaded (tools/blender/README.md), else the code build.
+  if (glb) attachBody({ root, rig }, glb, { face: { material: faceMat, w: HEAD.w, h: HEAD.h, centerY: HEAD.h / 2 } });
+  else buildBody(rig.bones, m, faceMat);
+
+  // ---------------- staff in right hand ----------------
+  const staff = buildStaff(m);
+  const mount = new THREE.Group();
+  mount.name = 'staffMount';
+  mount.position.set(0, -1.2, 0.6);
+  handL.add(mount);
+  mount.add(staff.group);
+  rig.bones.prop = mount;
+
+  // Orient the staff upright in the rest pose (counter the arm's rotations).
+  root.updateMatrixWorld(true);
+  const qHand = new THREE.Quaternion();
+  mount.parent.getWorldQuaternion(qHand);
+  const upright = new THREE.Quaternion().setFromEuler(new THREE.Euler(0.06, 0, 0.1));
+  mount.quaternion.copy(qHand.invert().multiply(upright));
+
+  rig.captureRest();
+
+  // anchors used by HUD / VFX
+  const anchors = {
+    overhead: anchor(body, [0, 138, 0]),
+    chest: anchor(chest, [0, 4, 10]),
+    staffGem: staff.gemAnchor,
+    feet: anchor(body, [0, 0, 0]),
+  };
+
+  root.traverse((o) => {
+    if (o.isMesh) o.receiveShadow = false;
+  });
+
+  // ---------------- secondary motion (on top of clips) ----------------
+  const twitch = { t: 2, side: 1, k: 0 };
+  function secondary(ch, dt, t) {
+    const calm = ch.alive ? 1 : 0.25;
+    tail0.rotation.z += Math.sin(t * 2.1) * 0.12 * calm;
+    tail1.rotation.z += Math.sin(t * 2.1 - 0.7) * 0.2 * calm;
+    tail2.rotation.z += Math.sin(t * 2.1 - 1.4) * 0.26 * calm;
+    tail1.rotation.x += Math.sin(t * 1.7 - 0.5) * 0.08 * calm;
+    hairBack.rotation.x += Math.sin(t * 1.6) * 0.025 * calm;
+    hairBack.rotation.z += Math.sin(t * 1.3 + 1) * 0.02 * calm;
+    // ear twitch every few seconds
+    twitch.t -= dt;
+    if (twitch.t <= 0) {
+      twitch.t = 2.5 + Math.random() * 3;
+      twitch.side = Math.random() < 0.5 ? 1 : -1;
+      twitch.k = 1;
+    }
+    twitch.k = Math.max(0, twitch.k - dt * 5);
+    const tw = Math.sin(twitch.k * Math.PI) * 0.22;
+    (twitch.side > 0 ? earL : earR).rotation.z += -twitch.side * tw;
+    earL.rotation.x += Math.sin(t * 1.9) * 0.03;
+    earR.rotation.x += Math.sin(t * 1.9 + 0.8) * 0.03;
+    staff.animate(t);
+  }
+
+  return {
+    root,
+    rig,
+    face,
+    anchors,
+    staff,
+    secondary,
+    stats: { tris: countTris(root), bones: rig.count, source: glb ? 'blender' : 'code' },
+  };
+}
+
+/** The code-built body (head, hair, outfit, tail) on the rig's bones. */
+function buildBody(B, m, faceMat) {
+  const { head, neck, hairBack, earL, earR, chest, spine, skirt, tail0, tail1, tail2 } = B;
+  const { thighL, shinL, footL, thighR, shinR, footR, armL, foreArmL, handL, armR, foreArmR, handR } = B;
   const headGeo = roundedBox(HEAD.w, HEAD.h, HEAD.d, HEAD.r, 5);
   planarFrontUV(headGeo, HEAD.w, HEAD.h);
   add(head, headGeo, [m.skin, m.skin, m.skin, m.skin, faceMat, m.skin], { p: [0, HEAD.h / 2, 0] });
@@ -183,71 +259,6 @@ export function buildLyra() {
   add(tail1, tailGeo(32), m.fur, { p: [0, 9, 0], s: [14, 16, 13] });
   add(tail2, tailGeo(33), m.fur, { p: [0, 8, 0], s: [12.5, 15, 12] });
   add(tail2, fluff(1, { seed: 34, amp: 0.12 }), m.furTip, { p: [0, 19, 0], s: [7, 9, 7] });
-
-  // ---------------- staff in right hand ----------------
-  const staff = buildStaff(m);
-  const mount = new THREE.Group();
-  mount.name = 'staffMount';
-  mount.position.set(0, -1.2, 0.6);
-  handL.add(mount);
-  mount.add(staff.group);
-  rig.bones.prop = mount;
-
-  // Orient the staff upright in the rest pose (counter the arm's rotations).
-  root.updateMatrixWorld(true);
-  const qHand = new THREE.Quaternion();
-  mount.parent.getWorldQuaternion(qHand);
-  const upright = new THREE.Quaternion().setFromEuler(new THREE.Euler(0.06, 0, 0.1));
-  mount.quaternion.copy(qHand.invert().multiply(upright));
-
-  rig.captureRest();
-
-  // anchors used by HUD / VFX
-  const anchors = {
-    overhead: anchor(body, [0, 138, 0]),
-    chest: anchor(chest, [0, 4, 10]),
-    staffGem: staff.gemAnchor,
-    feet: anchor(body, [0, 0, 0]),
-  };
-
-  root.traverse((o) => {
-    if (o.isMesh) o.receiveShadow = false;
-  });
-
-  // ---------------- secondary motion (on top of clips) ----------------
-  const twitch = { t: 2, side: 1, k: 0 };
-  function secondary(ch, dt, t) {
-    const calm = ch.alive ? 1 : 0.25;
-    tail0.rotation.z += Math.sin(t * 2.1) * 0.12 * calm;
-    tail1.rotation.z += Math.sin(t * 2.1 - 0.7) * 0.2 * calm;
-    tail2.rotation.z += Math.sin(t * 2.1 - 1.4) * 0.26 * calm;
-    tail1.rotation.x += Math.sin(t * 1.7 - 0.5) * 0.08 * calm;
-    hairBack.rotation.x += Math.sin(t * 1.6) * 0.025 * calm;
-    hairBack.rotation.z += Math.sin(t * 1.3 + 1) * 0.02 * calm;
-    // ear twitch every few seconds
-    twitch.t -= dt;
-    if (twitch.t <= 0) {
-      twitch.t = 2.5 + Math.random() * 3;
-      twitch.side = Math.random() < 0.5 ? 1 : -1;
-      twitch.k = 1;
-    }
-    twitch.k = Math.max(0, twitch.k - dt * 5);
-    const tw = Math.sin(twitch.k * Math.PI) * 0.22;
-    (twitch.side > 0 ? earL : earR).rotation.z += -twitch.side * tw;
-    earL.rotation.x += Math.sin(t * 1.9) * 0.03;
-    earR.rotation.x += Math.sin(t * 1.9 + 0.8) * 0.03;
-    staff.animate(t);
-  }
-
-  return {
-    root,
-    rig,
-    face,
-    anchors,
-    staff,
-    secondary,
-    stats: { tris: countTris(root), bones: rig.count },
-  };
 }
 
 function anchor(parent, p) {

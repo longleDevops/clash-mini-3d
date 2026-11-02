@@ -2,3 +2,7 @@ node_modules/
 scratch/
 dist/play.html
 .DS_Store
+
+# Blender working files (sources are the build scripts)
+*.blend
+*.blend1

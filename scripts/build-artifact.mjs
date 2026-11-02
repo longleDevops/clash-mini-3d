@@ -20,17 +20,28 @@ const result = await build({
   external: ['three', 'three/addons/*'],
   minify: true,
   write: false,
-  target: 'es2020',
+  target: 'es2022', // top-level await (hero bodies load before the game starts)
   legalComments: 'none',
   logLevel: 'warning',
 });
 let js = result.outputFiles[0].text.replace(/<\/script/gi, '<\\/script');
 const css = fs.readFileSync(path.join(root, 'src/ui/styles.css'), 'utf8');
+// Binary assets (Blender GLBs under assets/) are embedded as base64 so the page stays one file.
+const assets = {};
+(function scan(dir) {
+  if (!fs.existsSync(dir)) return;
+  for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+    const f = path.join(dir, e.name);
+    if (e.isDirectory()) scan(f);
+    else if (/\.glb$/i.test(e.name)) assets[path.relative(root, f).split(path.sep).join('/')] = fs.readFileSync(f).toString('base64');
+  }
+})(path.join(root, 'assets'));
+js = `globalThis.__SKYWARD_ASSETS__=${JSON.stringify(assets)};\n` + js;
 let page = fs.readFileSync(path.join(root, 'src/app.html'), 'utf8').replace('/*__CSS__*/', () => css).replace('/*__JS__*/', () => js);
 if (local) page = page.replace(/https:\/\/cdn\.jsdelivr\.net\/npm\/three@[\d.]+\//g, '/node_modules/three/');
 
 if (check) {
-  console.log(`ok: bundle ${(js.length / 1024).toFixed(1)} KB, page ${(page.length / 1024).toFixed(1)} KB`);
+  console.log(`ok: bundle ${(js.length / 1024).toFixed(1)} KB, page ${(page.length / 1024).toFixed(1)} KB, assets: ${Object.keys(assets).join(', ') || 'none'}`);
   process.exit(0);
 }
 fs.mkdirSync(path.join(root, 'dist'), { recursive: true });

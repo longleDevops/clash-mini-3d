@@ -35,7 +35,11 @@ def srgb(hexcolor):
 HAIR_DEEP = srgb("#241729")
 HAIR_BASE = srgb("#35223F")
 HAIR_SHEEN = srgb("#5A3D6E")
-FUR_LILAC = srgb("#e3dbfa")
+HAIR_LIT = srgb("#6B4C82")
+FUR_LILAC = srgb("#E4D9FF")
+TAIL_ROOT = srgb("#DCCFFF")
+TAIL_BODY = srgb("#FAF7FF")
+TAIL_DEEP = srgb("#BFAEEA")
 FUR_WHITE = srgb("#ffffff")
 FUR_BLUSH = srgb("#ffe6f3")
 ROBE_TOP = srgb("#F26BB6")
@@ -61,7 +65,7 @@ ROLES = {
     "blush": ("#FFE3F4", 0.75, 0, False, True),
     "gold": ("#FFD45C", 0.3, 0.6, False, False),
     "amber": ("#E6A42A", 0.35, 0.5, False, False),
-    "fur": ("#ffffff", 0.92, 0, False, True),
+    "fur": ("#ffffff", 0.9, 0, False, True),
     "earInner": ("#ff9fcf", 0.8, 0, False, False),
     "lilac": ("#F2EEFF", 0.75, 0, False, False),
     "boot": ("#4A3226", 0.5, 0, False, False),
@@ -305,9 +309,10 @@ def tube(body, bone, role, path, radius, sides=6, closed=False, flat=None, norma
         body.add(bone, role, *capped(grid, cap, cap))
 
 
-def lock(body, bone, pts, half_width, thick=0.5, rows=10, sides=7, normal=(0, 1, 0), start=0.45, tip=2.2, lens=1.0, palette=None, role="hair", carry=False, soft_end=True):
+def lock(body, bone, pts, half_width, thick=0.5, rows=10, sides=7, normal=(0, 1, 0), start=0.45, tip=2.2, lens=1.0, palette=None, role="hair", carry=False, soft_end=True, lit=None):
     """One soft clump of hair, like a piece of sculpted clay: swelling from the root and tapering to a rounded end. Dark on
-    its underside with a quiet highlight along its top. palette(t) replaces that colouring. soft_end=False ends in a point."""
+    its underside with a quiet highlight along its top. lit is a stronger highlight colour running further along the clump.
+    palette(t) replaces that colouring. soft_end=False ends in a point."""
     # A soft end needs its rows packed towards the tip, to round off instead of stopping short.
     t = 1 - (1 - np.linspace(0, 1, rows + 1)) ** (1.8 if soft_end else 1.0)
     path = spline(pts, rows, t)
@@ -324,8 +329,9 @@ def lock(body, bone, pts, half_width, thick=0.5, rows=10, sides=7, normal=(0, 1,
     else:
         top = smooth(-0.9, 0.3, sa)[None, :]
         c = mix(HAIR_DEEP, HAIR_BASE, np.broadcast_to(top, (rows + 1, sides)))
-        ridge = np.exp(-(((ca[None, :] - 0.15) / 0.7) ** 2)) * smooth(-0.2, 0.6, sa)[None, :] * np.exp(-(((t[:, None] - 0.42) / 0.34) ** 2))
-        c = mix(c, HAIR_SHEEN, ridge * 0.7)
+        reach = 0.34 if lit is None else 0.46
+        ridge = np.exp(-(((ca[None, :] - 0.15) / 0.7) ** 2)) * smooth(-0.2, 0.6, sa)[None, :] * np.exp(-(((t[:, None] - 0.42) / reach) ** 2))
+        c = mix(c, HAIR_SHEEN if lit is None else lit, ridge * (0.7 if lit is None else 0.95))
     verts, faces = capped(grid)
     body.add(bone, role, verts, faces, colors=c.reshape(-1, 3))
 
@@ -564,50 +570,62 @@ def build_back_hair(body, B):
     ]
     for az, z_end, r_end, curl, w in clumps:
         pts = back_path(az, z_end, r_end, 0.03, phase=0.5 + az * 0.005, curl=curl)
-        lock(body, hb, pts, w, thick=0.4, rows=18, sides=9, normal=radial, start=0.22, tip=3.4, carry=True)
+        lock(body, hb, pts, w, thick=0.4, rows=18, sides=9, normal=radial, start=0.22, tip=3.4, carry=True, lit=HAIR_LIT)
 
 
 def build_ears(body, B):
-    """Large soft fox ears: broad rounded triangles, thick and a little dished in front, white with a faint lilac base,
-    a big pink inner ear and a white tuft of fluff at its base."""
+    """Large soft fox ears, nearly half the head's height: broad rounded triangles, thick and a little dished in front.
+    The back and outer faces are lilac fading to white at the tip, so from behind they don't read as white spikes. A big
+    pink inner ear, with a fluffy white tuft at its base."""
+    span, half_wide, deep, front_part, sweep_by = 0.31, 0.076, 0.05, 0.42, 0.036
+    outline = lambda t: (1 - t**1.7) ** 0.68
     for bone, sx in (("earL", 1), ("earR", -1)):
         o, R = B[bone]
 
         def world(p):
             return p @ R.T + o
 
-        rows, cols = 13, 16
-        t = np.linspace(0, 1, rows)
-        z = -0.035 + 0.27 * t
-        w = 0.066 * (1 - t**1.9) ** 0.72 + 0.002
-        d = 0.042 * (1 - t**2.2) ** 0.6 + 0.002
-        sweep = sx * 0.03 * smooth(0.0, 1.0, t)
+        rows, cols = 15, 16
+        t = 1 - (1 - np.linspace(0, 1, rows)) ** 1.5  # rows packed towards the round tip
+        z = -0.035 + span * t
+        w = half_wide * outline(t) + 0.002
+        d = deep * outline(t) + 0.002
+        sweep = sx * sweep_by * smooth(0.0, 1.0, t)
         a = np.linspace(0, 2 * math.pi, cols, endpoint=False)
         ca, sa = np.cos(a), np.sin(a)
-        back = np.where(sa > 0, sa, sa * 0.42)  # +y is behind; the front is shallower
+        back = np.where(sa > 0, sa, sa * front_part)  # +y is behind; the front is shallower
         grid = np.stack([np.outer(w, ca) + sweep[:, None], np.outer(d, back), np.repeat(z[:, None], cols, axis=1)], axis=-1)
-        colors = np.repeat(mix(FUR_LILAC, FUR_WHITE, smooth(0.0, 0.55, t))[:, None, :], cols, axis=1)
+        shaded = mix(FUR_LILAC, FUR_WHITE, smooth(0.42, 1.0, t))
+        facing = np.maximum(smooth(-0.25, 0.45, sa), 0.8 * smooth(0.25, 0.9, ca * sx))
+        colors = FUR_WHITE + (shaded[:, None, :] - FUR_WHITE) * facing[None, :, None]
         verts, faces = capped(world(grid))
         body.add(bone, "fur", verts, faces, colors=colors.reshape(-1, 3))
         # The pink inner ear, lying on the front of the ear.
         rows2, cols2 = 9, 12
         t2 = np.linspace(0, 1, rows2)
-        h2 = 0.005 + 0.185 * t2
-        along = (h2 + 0.035) / 0.27
-        w2 = 0.052 * (1 - t2**2.0) ** 0.7 + 0.0015
-        front = (0.042 * (1 - along**2.2) ** 0.6 + 0.002) * 0.42
+        h2 = 0.005 + 0.215 * t2
+        along = (h2 + 0.035) / span
+        w2 = 0.062 * (1 - t2**1.8) ** 0.68 + 0.0015
+        front = (deep * outline(along) + 0.002) * front_part
         a2 = np.linspace(0, 2 * math.pi, cols2, endpoint=False)
         inner = np.stack(
             [
-                np.outer(w2, np.cos(a2)) + (sx * 0.03 * smooth(0.0, 1.0, along))[:, None],
+                np.outer(w2, np.cos(a2)) + (sx * sweep_by * smooth(0.0, 1.0, along))[:, None],
                 np.outer(0.0045 * (1 - t2**2) + 0.0008, np.sin(a2)) - front[:, None] - 0.001,
                 np.repeat(h2[:, None], cols2, axis=1),
             ],
             axis=-1,
         )
         body.add(bone, "earInner", *capped(world(inner)))
-        # A soft tuft of fluff at the inner base.
-        for center, radii in (((0.0, -0.028, 0.035), (0.03, 0.016, 0.034)), ((-0.026, -0.025, 0.024), (0.02, 0.014, 0.024)), ((0.027, -0.025, 0.026), (0.02, 0.014, 0.025))):
+        # A big fluffy tuft of soft lobes at the inner base.
+        tuft = (
+            ((0.0, -0.03, 0.052), (0.04, 0.02, 0.048)),
+            ((-0.038, -0.026, 0.034), (0.03, 0.018, 0.036)),
+            ((0.04, -0.026, 0.036), (0.03, 0.018, 0.036)),
+            ((-0.018, -0.032, 0.09), (0.023, 0.015, 0.032)),
+            ((0.023, -0.032, 0.092), (0.023, 0.015, 0.032)),
+        )
+        for center, radii in tuft:
             v, f = ellipsoid(center, radii, rows=5, cols=8)
             body.add(bone, "fur", world(v), f, colors=np.tile(FUR_WHITE, (len(v), 1)))
 
@@ -950,53 +968,64 @@ def build_forearm_and_hand(body, B, fore, hand, sx):
     body.add(hand, "skin", world(thumb[0]), thumb[1])
 
 
-def fur_colors(t0, t1):
-    """A lilac tint at the root of the tail, white along it, and the faintest blush at the tip. t is 0 to 1 over the whole tail."""
-
-    def fn(t):
-        tt = t0 + (t1 - t0) * np.asarray(t)
-        c = mix(FUR_LILAC, FUR_WHITE, smooth(0.0, 0.3, tt))
-        return mix(c, FUR_BLUSH, smooth(0.82, 1.0, tt))
-
-    return fn
+def tail_color(t):
+    """Along the whole tail, 0 to 1: lilac at the root, near white along it, the faintest blush at the tip."""
+    t = np.asarray(t, dtype=float)
+    return mix(mix(TAIL_ROOT, TAIL_BODY, smooth(0.0, 0.48, t)), FUR_BLUSH, smooth(0.84, 1.0, t))
 
 
 def build_tail(body, B):
-    """Big fluffy tail in three pieces, split at the pivots: a smooth teardrop with a few large soft clumps. Each piece closes
-    in a round end that overlaps the next."""
+    """Big fluffy tail on three bones: six large soft clumps overlapping along a curved spine, each round in section, over a
+    darker core that shows in the creases between them. Clumps overlap past the pivots, so bends don't open gaps."""
     T0, T1, T2 = B["tail0"][0], B["tail1"][0], B["tail2"][0]
     up2 = B["tail2"][1][:, 2]
     tip = T2 + up2 * 0.33
     spine = spline([T0 - unit(T1 - T0) * 0.03, T0, T1, T2, T2 + up2 * 0.16, tip], 120)
     length = np.concatenate([[0], np.cumsum(np.linalg.norm(np.diff(spine, axis=0), axis=1))])
     total = length[-1]
-    u_of = lambda p: length[np.argmin(np.linalg.norm(spine - p, axis=1))] / total
+    at = lambda t: np.stack([np.interp(np.asarray(t) * total, length, spine[:, k]) for k in range(3)], axis=-1)
+    u_of = lambda q: length[np.argmin(np.linalg.norm(spine - q, axis=1))] / total
     joints = [u_of(T1), u_of(T2)]
-    ranges = [("tail0", 0.0, joints[0] + 0.07), ("tail1", joints[0] - 0.08, joints[1] + 0.07), ("tail2", joints[1] - 0.08, 1.0)]
 
     def radius(t):
         return np.interp(t, [0.0, 0.1, 0.3, 0.5, 0.68, 0.82, 0.93, 1.0], [0.045, 0.07, 0.12, 0.146, 0.146, 0.116, 0.066, 0.008])
 
-    for bone, a, b in ranges:
-        rows, cols = 16, 20
+    # The core, in the deeper colour, in three overlapping pieces.
+    for bone, a, b in (("tail0", 0.0, joints[0] + 0.07), ("tail1", joints[0] - 0.08, joints[1] + 0.07), ("tail2", joints[1] - 0.08, 0.92)):
+        rows, cols = 10, 12
         tt = np.linspace(a, b, rows)
-        path = np.stack([np.interp(tt * total, length, spine[:, k]) for k in range(3)], axis=1)
+        path = at(tt)
         s, u = frames(path, (0.2, -0.3, 0.9))
         A = np.linspace(0, 2 * math.pi, cols, endpoint=False)
-        ends = np.sqrt(np.clip(1 - (1 - smooth(a, a + 0.05, tt)) ** 2 * 0.96, 0, 1))
-        if b < 0.99:
-            ends = ends * np.sqrt(np.clip(1 - smooth(b - 0.05, b, tt) ** 2 * 0.96, 0, 1))
-        # A few broad clumps that wrap slowly around the tail.
-        phase = tt[:, None] * 3.4 + 0.2 * np.sin(3 * A)[None, :]
-        tier = phase - np.floor(phase)
-        clumps = 1 + 0.12 * (smooth(0.0, 0.72, tier) * smooth(1.0, 0.82, tier) - 0.45) + 0.05 * np.cos(3 * A[None, :] + tt[:, None] * 7) + 0.022 * np.cos(5 * A[None, :] - tt[:, None] * 5)
-        r = (radius(tt) * ends)[:, None] * clumps
-        grid = path[:, None, :] + r[:, :, None] * (np.cos(A)[None, :, None] * s[:, None, :] + np.sin(A)[None, :, None] * u[:, None, :])
-        colors = np.repeat(fur_colors(a, b)(np.linspace(0, 1, rows))[:, None, :], cols, axis=1)
-        # A faint lilac in the hollows between clumps.
-        colors = colors + (FUR_LILAC - colors) * (0.3 * smooth(0.985, 0.93, clumps))[:, :, None]
+        ends = np.sqrt(np.clip(1 - (1 - smooth(a, a + 0.05, tt)) ** 2 * 0.96, 0, 1)) * np.sqrt(np.clip(1 - smooth(b - 0.05, b, tt) ** 2 * 0.96, 0, 1))
+        r = 0.8 * radius(tt) * ends
+        grid = path[:, None, :] + r[:, None, None] * (np.cos(A)[None, :, None] * s[:, None, :] + np.sin(A)[None, :, None] * u[:, None, :])
+        colors = np.repeat(mix(tail_color(tt), TAIL_DEEP, 0.55)[:, None, :], cols, axis=1)
         verts, faces = capped(grid)
         body.add(bone, "fur", verts, faces, colors=colors.reshape(-1, 3))
+    # The clumps: (place along the tail, half length). Each sits off the spine at a new angle, so they stagger around it.
+    for i, (t0, half) in enumerate(((0.14, 0.108), (0.29, 0.138), (0.44, 0.155), (0.59, 0.155), (0.73, 0.14), (0.87, 0.118))):
+        bone = "tail0" if t0 < joints[0] else "tail1" if t0 < joints[1] else "tail2"
+        near = at(np.linspace(t0 - 0.02, t0 + 0.02, 5))
+        s, u = frames(near, (0.2, -0.3, 0.9))
+        axis = unit(near[-1] - near[0])
+        rad = float(radius(t0)) * 1.14
+        turn = i * 2.4
+        center = near[2] + (math.cos(turn) * s[2] + math.sin(turn) * u[2]) * rad * 0.19
+        R = basis(axis)
+
+        def fn(v, w, seed=i * 1.7):
+            shape = 0.52 + 0.48 * (1 - np.cos(v)) / 2  # fuller towards its root, narrowing to a soft point at its tip
+            rho = rad * np.sin(v) ** 0.9 * shape * (1 + 0.06 * np.cos(3 * w + seed))
+            p = np.stack([rho * np.cos(w), rho * np.sin(w), half * np.cos(v)], axis=-1)
+            return p @ R.T + center
+
+        verts, faces = polar(fn, 10, 14)
+        along = (verts - center) @ axis / half
+        # The root of each clump falls into shade where it tucks under the one before it, which keeps them apart under bright light.
+        main = tail_color(np.clip(t0 + along * half / total, 0, 1))
+        colors = main + (TAIL_DEEP - main) * (0.8 * smooth(0.05, -0.72, along))[:, None]
+        body.add(bone, "fur", verts, faces, colors=colors)
 
 
 # ---- the build ----
@@ -1254,6 +1283,18 @@ def check_contract():
     print("LYRA bone drift", round(drift, 7), "fringe lowest over the eyes", round(fringe_low, 3))
     print("LYRA bounds min", np.round(pts.min(axis=0), 3).tolist(), "max", np.round(pts.max(axis=0), 3).tolist())
     print("LYRA width without tail", round(float(no_tail[:, 0].max() - no_tail[:, 0].min()), 3), "x range", np.round([no_tail[:, 0].min(), no_tail[:, 0].max()], 3).tolist())
+    # The tail must be round, not a flat cutout: thickness against width of a slice through its middle.
+    fur = np.array([o.matrix_world @ v.co for o in meshes if o.parent.name.startswith("tail") for v in o.data.vertices])
+    t1, t2 = np.array(objects["tail1"].matrix_world.translation), np.array(objects["tail2"].matrix_world.translation)
+    axis = unit(t2 - t1)
+    rel = fur - (t1 + t2) / 2
+    plane = rel[np.abs(rel @ axis) < 0.04]
+    plane = plane - np.outer(plane @ axis, axis)
+    spread = np.sort(np.linalg.eigvalsh(np.cov(plane.T)))
+    roundness = float(np.sqrt(spread[1] / spread[2]))
+    if roundness < 0.7:
+        problems.append(f"tail is only {roundness:.2f} as thick as it is wide")
+    print("LYRA tail thickness against width", round(roundness, 2))
     print("LYRA materials", sorted(m.name for m in bpy.data.materials))
     if problems:
         print("LYRA CONTRACT PROBLEMS", problems)

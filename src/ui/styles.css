@@ -1205,3 +1205,14 @@ body {
     animation-duration: 0.01s;
   }
 }
+
+/* Heroes > Model: body switch (code-built vs Blender variants) */
+.body-pick {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.pill.small {
+  font-size: 15px;
+  padding: 3px 10px;
+}

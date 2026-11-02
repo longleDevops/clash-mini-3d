@@ -4,10 +4,15 @@ import { LYRA_CLIPS } from './clips.js';
 import { LYRA_EXPRESSIONS } from './face.js';
 import { LYRA_PALETTE } from './palette.js';
 import { loadBodyAsset } from '../bodyAsset.js';
+import { bodyChoice } from '../bodyChoice.js';
 
-// Blender-made body (tools/blender/README.md). Until assets/lyra/lyra.glb exists this is
-// null and Lyra uses her code-built body; the rig, clips, face and staff are shared.
-const glb = await loadBodyAsset('assets/lyra/lyra.glb');
+// Body variants (tools/blender/README.md). The rig, clips, face and staff are shared;
+// only the meshes differ. Missing GLBs load as null and drop out of the list.
+//   blender:   scripted Blender model  (assets/lyra/lyra.glb)
+//   generated: image-to-3D model       (assets/lyra/lyra_gen.glb)
+const [blender, generated] = await Promise.all([loadBodyAsset('assets/lyra/lyra.glb'), loadBodyAsset('assets/lyra/lyra_gen.glb')]);
+const BODIES = { code: null, blender, generated };
+const DEFAULT_BODY = 'code'; // switch once a Blender body is approved
 
 export default registerUnit({
   id: 'lyra',
@@ -20,8 +25,12 @@ export default registerUnit({
   blurb: 'A fox-spirit mage who rings her charm bells to call foxfire and starlight.',
   stats: { hp: 1300, atk: 120, def: 32, spd: 110, range: 3, move: 2 },
   skills: { basic: 'lyra.spiritOrb', active: ['lyra.foxfireVolley', 'lyra.moonlitStarfall'], passive: 'lyra.spiritBells' },
-  build: (opts = {}) => buildLyra({ glb: opts.procedural ? null : glb }),
-  bodySource: glb ? 'blender' : 'code',
+  build: (opts = {}) => {
+    const pick = opts.procedural ? 'code' : opts.body ?? bodyChoice.get('lyra', DEFAULT_BODY);
+    return buildLyra({ glb: BODIES[pick] ?? null });
+  },
+  bodies: Object.keys(BODIES).filter((k) => k === 'code' || BODIES[k]),
+  defaultBody: DEFAULT_BODY,
   clips: LYRA_CLIPS,
   expressions: LYRA_EXPRESSIONS,
   defaultExpression: 'neutral',

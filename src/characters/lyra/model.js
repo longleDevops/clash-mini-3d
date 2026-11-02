@@ -82,8 +82,8 @@ export function buildLyra({ glb = null } = {}) {
   const faceMat = new THREE.MeshStandardMaterial({ map: face.texture, roughness: 0.8 });
   faceMat.name = 'face';
   // Body meshes: Blender GLB when one is loaded (tools/blender/README.md), else the code build.
-  if (glb) attachBody({ root, rig }, glb, { face: { material: faceMat, w: HEAD.w, h: HEAD.h, centerY: HEAD.h / 2 } });
-  else buildBody(rig.bones, m, faceMat);
+  const glbStats = glb ? attachBody({ root, rig }, glb, { face: { material: faceMat, w: HEAD.w, h: HEAD.h, centerY: HEAD.h / 2 } }) : null;
+  if (!glb) buildBody(rig.bones, m, faceMat);
 
   // ---------------- staff in right hand ----------------
   const staff = buildStaff(m);
@@ -147,6 +147,7 @@ export function buildLyra({ glb = null } = {}) {
     anchors,
     staff,
     secondary,
+    afterPose: glbStats?.follow, // skinned Blender bodies follow the posed rig
     stats: { tris: countTris(root), bones: rig.count, source: glb ? 'blender' : 'code' },
   };
 }

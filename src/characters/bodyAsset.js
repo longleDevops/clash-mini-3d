@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { clone as cloneSkinned } from 'three/addons/utils/SkeletonUtils.js';
 
 /**
  * Blender pipeline for hero bodies (contract: tools/blender/README.md).
@@ -13,6 +14,10 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
  *   toBlockout(built)       code model -> blockout scene for GLTFExporter (Blender reference)
  *   loadBodyAsset(url)      GLB (embedded in the artifact, or fetched in dev) -> gltf | null
  *   attachBody(built, gltf) put the GLB meshes onto a freshly built rig
+ *
+ * Skinned bodies (one weighted mesh with its own armature, e.g. from an
+ * image-to-3D tool) are supported too: every GLB node named like a rig bone
+ * follows that code bone through a fixed rest offset, so the same clips drive it.
  */
 
 export const MODEL_SCALE = 0.01; // model units -> world units (= Blender metres)
@@ -90,7 +95,7 @@ async function _load(url) {
     if (bundled?.[url]) buf = Uint8Array.from(atob(bundled[url]), (c) => c.charCodeAt(0)).buffer;
     else if (bundled) return null;
     else {
-      const res = await fetch(url);
+      const res = await fetch(new URL(url, new URL('../../', import.meta.url))); // dev: paths are relative to the repo root
       if (!res.ok) return null;
       buf = await res.arrayBuffer();
     }
@@ -117,15 +122,18 @@ export function attachBody({ root, rig }, gltf, { face, skip = ['prop'], castSha
     const a = gltf.parser?.associations?.get(o);
     return (a?.nodes !== undefined && json?.nodes?.[a.nodes]?.name) || o.name;
   };
+  let skinned = false;
+  src.traverse((o) => (skinned ||= !!o.isSkinnedMesh));
+  if (skinned) return attachSkinned({ root, rig }, src, realName, { skip, castShadow });
+
   const SKIP = Symbol('skip');
   const boneFor = (o) => {
     for (let x = o; x && x !== src; x = x.parent) {
       if (x.userData?.bone && rig.bones[x.userData.bone]) return x.userData.bone;
       const n = realName(x);
-      const base = n.replace(/\.\d{3}$/, ''); // Blender duplicate suffix
-      if (skip.includes(n) || skip.includes(base)) return SKIP;
-      if (rig.bones[n]) return n;
-      if (rig.bones[base]) return base;
+      if (skip.includes(n) || skip.includes(n.replace(/\.\d{3}$/, ''))) return SKIP;
+      const bn = codeBoneName(n, rig);
+      if (bn) return bn;
     }
     return null;
   };
@@ -165,6 +173,62 @@ export function attachBody({ root, rig }, gltf, { face, skip = ['prop'], castSha
     stats.tris += triCount(geo);
   }
   if (stats.unassigned.length) console.warn('[body] meshes without a bone parent (put on base):', stats.unassigned);
+  return stats;
+}
+
+// Common armature names -> rig bone names (after dropping .L/.R separators).
+const ALIASES = { upper_armL: 'armL', upper_armR: 'armR', upperarmL: 'armL', upperarmR: 'armR', forearmL: 'foreArmL', forearmR: 'foreArmR', lower_armL: 'foreArmL', lower_armR: 'foreArmR' };
+
+function codeBoneName(n, rig) {
+  if (rig.bones[n]) return n;
+  const k = n.replace(/\.\d{3}$/, '').replace(/[._]([LR])$/, '$1'); // Blender duplicate suffix, side separator
+  if (rig.bones[k]) return k;
+  if (ALIASES[k] && rig.bones[ALIASES[k]]) return ALIASES[k];
+  return null;
+}
+
+/** Skinned body: keep the GLB armature and make its bones follow the code rig every frame. */
+function attachSkinned({ root, rig }, src, realName, { skip, castShadow }) {
+  const copy = cloneSkinned(src);
+  const original = new Map();
+  (function pair(a, b) {
+    original.set(b, a);
+    for (let i = 0; i < a.children.length; i++) pair(a.children[i], b.children[i]);
+  })(src, copy);
+  copy.name = 'skinnedBody';
+  root.add(copy);
+  root.updateMatrixWorld(true);
+  const stats = { meshes: 0, tris: 0, unassigned: [], skinned: true, followed: [] };
+  const follows = [];
+  copy.traverse((o) => {
+    if (o.isMesh) {
+      o.geometry = o.geometry.clone();
+      o.material = Array.isArray(o.material) ? o.material.map((m) => m.clone()) : o.material.clone();
+      o.castShadow = castShadow;
+      if (o.isSkinnedMesh) o.frustumCulled = false; // bounds don't follow the pose
+      stats.meshes++;
+      stats.tris += triCount(o.geometry);
+      return;
+    }
+    if (o === copy) return;
+    const n = realName(original.get(o) || o);
+    if (skip.includes(n)) return;
+    const bn = codeBoneName(n, rig);
+    if (!bn) return;
+    const bone = rig.bones[bn];
+    follows.push({ node: o, bone, offset: new THREE.Matrix4().copy(bone.matrixWorld).invert().multiply(o.matrixWorld) });
+    stats.followed.push(bn);
+  });
+  const m = new THREE.Matrix4();
+  // Call after the clips + secondary motion have posed the code rig.
+  stats.follow = () => {
+    root.updateMatrixWorld(true);
+    for (const f of follows) {
+      f.node.parent.updateWorldMatrix(true, false);
+      m.copy(f.node.parent.matrixWorld).invert().multiply(f.bone.matrixWorld).multiply(f.offset);
+      m.decompose(f.node.position, f.node.quaternion, f.node.scale);
+    }
+  };
   return stats;
 }
 

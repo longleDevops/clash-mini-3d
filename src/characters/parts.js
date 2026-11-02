@@ -9,6 +9,7 @@ export function makeMaterials(defs) {
   for (const [k, v] of Object.entries(defs)) {
     const o = typeof v === 'object' ? v : { color: v };
     out[k] = new THREE.MeshStandardMaterial({ roughness: 0.62, metalness: 0, ...o });
+    out[k].name = k; // names survive GLB export (Blender pipeline, see tools/blender/README.md)
   }
   return out;
 }

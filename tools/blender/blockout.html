@@ -1,0 +1,33 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>blockout export</title>
+<script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.172.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.172.0/examples/jsm/"}}</script>
+</head>
+<body>
+<script type="module">
+// Exports a hero's code-built model as a Blender blockout GLB (see tools/blender/README.md).
+// Driven by tools/blender/export-blockout.mjs; usable by hand: open
+// http://localhost:5173/tools/blender/blockout.html?unit=lyra and call window.exportBlockout().
+import * as THREE from 'three';
+import { GLTFExporter } from 'three/addons/exporters/GLTFExporter.js';
+import { getUnit } from '/src/characters/registry.js';
+import { toBlockout } from '/src/characters/bodyAsset.js';
+
+const id = new URLSearchParams(location.search).get('unit') || 'lyra';
+await import(`/src/characters/${id}/index.js`);
+
+window.exportBlockout = async () => {
+  const built = getUnit(id).build({ procedural: true });
+  const { scene, report } = toBlockout(built);
+  const glb = await new GLTFExporter().parseAsync(scene, { binary: true });
+  const bytes = new Uint8Array(glb);
+  let bin = '';
+  for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+  return { base64: btoa(bin), report };
+};
+document.title = 'ready';
+</script>
+</body>
+</html>

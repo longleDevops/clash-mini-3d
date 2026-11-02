@@ -3,6 +3,11 @@ import { buildLyra } from './model.js';
 import { LYRA_CLIPS } from './clips.js';
 import { LYRA_EXPRESSIONS } from './face.js';
 import { LYRA_PALETTE } from './palette.js';
+import { loadBodyAsset } from '../bodyAsset.js';
+
+// Blender-made body (tools/blender/README.md). Until assets/lyra/lyra.glb exists this is
+// null and Lyra uses her code-built body; the rig, clips, face and staff are shared.
+const glb = await loadBodyAsset('assets/lyra/lyra.glb');
 
 export default registerUnit({
   id: 'lyra',
@@ -15,7 +20,8 @@ export default registerUnit({
   blurb: 'A fox-spirit mage who rings her charm bells to call foxfire and starlight.',
   stats: { hp: 1300, atk: 120, def: 32, spd: 110, range: 3, move: 2 },
   skills: { basic: 'lyra.spiritOrb', active: ['lyra.foxfireVolley', 'lyra.moonlitStarfall'], passive: 'lyra.spiritBells' },
-  build: buildLyra,
+  build: (opts = {}) => buildLyra({ glb: opts.procedural ? null : glb }),
+  bodySource: glb ? 'blender' : 'code',
   clips: LYRA_CLIPS,
   expressions: LYRA_EXPRESSIONS,
   defaultExpression: 'neutral',

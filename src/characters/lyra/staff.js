@@ -17,8 +17,8 @@ export function buildStaff(mats) {
   s.position.y = -STAFF_GRIP_Y;
   group.add(s);
 
-  const wood = new THREE.MeshStandardMaterial({ color: P.brown, roughness: 0.5 });
-  const woodLight = new THREE.MeshStandardMaterial({ color: P.taupe, roughness: 0.5 });
+  const wood = new THREE.MeshStandardMaterial({ name: 'wood', color: P.brown, roughness: 0.5 });
+  const woodLight = new THREE.MeshStandardMaterial({ name: 'woodLight', color: P.taupe, roughness: 0.5 });
   const { gold, amber } = mats;
 
   // shaft + fittings

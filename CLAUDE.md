@@ -30,6 +30,10 @@ URL (pass it as `url` from a new conversation). Never create a second game artif
 - Faces are painted canvases (`FaceCanvas.js`); the head's front face uses
   planar UVs, so draw features in head units.
 - Skills are data + `async cast(ctx)`; `ctx` comes from `BattleController.skillContext`.
+- Hero bodies can come from Blender (`assets/<hero>/<hero>.glb`, loaded by
+  `src/characters/bodyAsset.js`); the rig, clips, face and props stay in code. The
+  contract, blockout export and compare page are in `tools/blender/README.md`. Blender
+  runs on the user's Mac mini through Remote Control (headless `blender -b`).
 
 ## Checking changes
 `npm run dev`, then open http://localhost:5173. Headless Chromium works with
